@@ -124,9 +124,10 @@ function validateEvent(normalized) {
  * Returns the saved InboundEvent document.
  */
 async function ingestEvent(raw, sourceSystem, correlationId, idempotencyKey, jobId) {
-  // Idempotency check
+  // Idempotency check — coerce to string to prevent MongoDB query injection
   if (idempotencyKey) {
-    const existing = await InboundEvent.findOne({ idempotencyKey });
+    const safeKey = typeof idempotencyKey === 'string' ? idempotencyKey : String(idempotencyKey);
+    const existing = await InboundEvent.findOne({ idempotencyKey: safeKey });
     if (existing) {
       return { event: existing, duplicate: true };
     }

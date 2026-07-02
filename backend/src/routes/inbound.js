@@ -4,12 +4,13 @@ const InboundEvent = require('../models/InboundEvent');
 const IngestionJob = require('../models/IngestionJob');
 const { ingestEvent } = require('../utils/ingestHelper');
 const { writeAudit } = require('../utils/audit');
+const { ingestLimiter, queryLimiter } = require('../middleware/rateLimiter');
 
 /**
  * POST /api/v1/inbound/events
  * Unified single-event ingestion for CADS / PeopleSoft / ECM / JSPM.
  */
-router.post('/events', async (req, res) => {
+router.post('/events', ingestLimiter, async (req, res) => {
   const start = Date.now();
   const correlationId = req.correlationId;
   const sourceSystem = (req.headers['x-source-system'] || req.body.sourceSystem || 'UNKNOWN').toUpperCase();
@@ -92,7 +93,7 @@ router.post('/events', async (req, res) => {
  * POST /api/v1/inbound/events:batch
  * Batch ingestion — accepts { events: [...] }.
  */
-router.post('/events\\:batch', async (req, res) => {
+router.post('/events\\:batch', ingestLimiter, async (req, res) => {
   const start = Date.now();
   const correlationId = req.correlationId;
   const sourceSystem = (req.headers['x-source-system'] || req.body.sourceSystem || 'UNKNOWN').toUpperCase();
@@ -162,9 +163,13 @@ router.post('/events\\:batch', async (req, res) => {
  * GET /api/v1/inbound/events/:eventId/status
  * Returns the current processing status of a single event.
  */
-router.get('/events/:eventId/status', async (req, res) => {
-  const { eventId } = req.params;
-  const event = await InboundEvent.findOne({ eventId });
+router.get('/events/:eventId/status', queryLimiter, async (req, res) => {
+  // Sanitize eventId to a plain string to prevent query injection
+  const eventId = typeof req.params.eventId === 'string' ? req.params.eventId.trim() : null;
+  if (!eventId) {
+    return res.status(400).json({ error: 'Invalid eventId' });
+  }
+  const event = await InboundEvent.findOne({ eventId: String(eventId) });
   if (!event) {
     return res.status(404).json({ error: 'Event not found', eventId });
   }
@@ -194,10 +199,10 @@ router.get('/events/:eventId/status', async (req, res) => {
 });
 
 // ── Source-specific alias routes (all route to the same ingest handler) ──────
-router.post('/cads',       setSource('CADS'),       handleSingleIngest);
-router.post('/peoplesoft', setSource('PEOPLESOFT'), handleSingleIngest);
-router.post('/ecm',        setSource('ECM'),         handleSingleIngest);
-router.post('/jspm',       setSource('JSPM'),        handleSingleIngest);
+router.post('/cads',       ingestLimiter, setSource('CADS'),       handleSingleIngest);
+router.post('/peoplesoft', ingestLimiter, setSource('PEOPLESOFT'), handleSingleIngest);
+router.post('/ecm',        ingestLimiter, setSource('ECM'),        handleSingleIngest);
+router.post('/jspm',       ingestLimiter, setSource('JSPM'),       handleSingleIngest);
 
 function setSource(system) {
   return (req, _res, next) => {
