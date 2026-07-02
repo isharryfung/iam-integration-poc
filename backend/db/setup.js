@@ -75,7 +75,7 @@ const COLLECTIONS = [
       { key: { auditId: 1 }, unique: true },
       { key: { correlationId: 1 } },
       { key: { 'resource.email': 1, createdAt: -1 } },
-      // TTL: keep audit logs for 2 years
+      // TTL: keep audit logs for 730 days (~2 years)
       { key: { createdAt: 1 }, expireAfterSeconds: 63072000 },
     ],
   },

@@ -46,7 +46,7 @@ const auditLogSchema = new mongoose.Schema(
   }
 );
 
-// TTL: auto-expire audit logs after 2 years (configurable)
+// TTL: auto-expire audit logs after 730 days (~2 years)
 auditLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 63072000 });
 auditLogSchema.index({ 'resource.email': 1, createdAt: -1 });
 
