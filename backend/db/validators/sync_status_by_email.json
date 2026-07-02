@@ -1,0 +1,33 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "required": ["email"],
+    "properties": {
+      "_id":                { "bsonType": "string" },
+      "email":              { "bsonType": "string" },
+      "emailDomain":        { "bsonType": "string" },
+      "displayName":        { "bsonType": "string" },
+      "userType": {
+        "bsonType": "string",
+        "enum": ["staff", "student", "family", "contractor", "system", "unknown"]
+      },
+      "lastSourceSystem":     { "bsonType": "string" },
+      "lastEventId":          { "bsonType": "string" },
+      "lastEventTime":        { "bsonType": "date" },
+      "lastProcessingStatus": {
+        "bsonType": "string",
+        "enum": ["received", "validated", "validation_failed", "sent_to_midpoint", "success", "failed", "retrying", "dead_letter"]
+      },
+      "lastSuccessAt":        { "bsonType": "date" },
+      "lastFailureAt":        { "bsonType": "date" },
+      "lastError":            { "bsonType": "string" },
+      "lastMidpointStatus":   { "bsonType": "string" },
+      "midpointOid":          { "bsonType": "string" },
+      "midpointLastSyncAt":   { "bsonType": "date" },
+      "totalEventsReceived":  { "bsonType": "int" },
+      "totalEventsFailed":    { "bsonType": "int" },
+      "createdAt":            { "bsonType": "date" },
+      "updatedAt":            { "bsonType": "date" }
+    }
+  }
+}

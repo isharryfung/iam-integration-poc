@@ -1,0 +1,30 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "required": ["transactionId", "inboundEventId", "operation"],
+    "properties": {
+      "transactionId":  { "bsonType": "string" },
+      "inboundEventId": { "bsonType": "string" },
+      "correlationId":  { "bsonType": "string" },
+      "email":          { "bsonType": "string" },
+      "operation": {
+        "bsonType": "string",
+        "enum": ["add", "modify", "delete", "enable", "disable", "assign", "unassign", "reconcile"]
+      },
+      "targetResource":  { "bsonType": "string" },
+      "httpStatus":      { "bsonType": "int" },
+      "status": {
+        "bsonType": "string",
+        "enum": ["pending", "sent", "accepted", "rejected", "timeout", "error"]
+      },
+      "errorCode":    { "bsonType": "string" },
+      "errorDetail":  { "bsonType": "string" },
+      "attempt":      { "bsonType": "int" },
+      "maxAttempts":  { "bsonType": "int" },
+      "nextRetryAt":  { "bsonType": "date" },
+      "completedAt":  { "bsonType": "date" },
+      "createdAt":    { "bsonType": "date" },
+      "updatedAt":    { "bsonType": "date" }
+    }
+  }
+}

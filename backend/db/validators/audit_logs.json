@@ -1,0 +1,41 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "required": ["auditId", "action", "outcome"],
+    "properties": {
+      "auditId":       { "bsonType": "string" },
+      "correlationId": { "bsonType": "string" },
+      "actor": {
+        "bsonType": "object",
+        "properties": {
+          "type":      { "bsonType": "string", "enum": ["system", "api_client", "user", "cron"] },
+          "apiKeyId":  { "bsonType": "string" },
+          "serviceId": { "bsonType": "string" },
+          "ipAddress": { "bsonType": "string" }
+        }
+      },
+      "action": {
+        "bsonType": "string",
+        "enum": [
+          "ingest_event", "ingest_batch", "query_event_status",
+          "query_sync_status", "query_user_events",
+          "replay_event", "query_access",
+          "setup_db", "system_startup"
+        ]
+      },
+      "resource": {
+        "bsonType": "object",
+        "properties": {
+          "type":  { "bsonType": "string" },
+          "id":    { "bsonType": "string" },
+          "email": { "bsonType": "string" }
+        }
+      },
+      "outcome":     { "bsonType": "string", "enum": ["success", "failure", "partial"] },
+      "httpStatus":  { "bsonType": "int" },
+      "errorDetail": { "bsonType": "string" },
+      "durationMs":  { "bsonType": "int" },
+      "createdAt":   { "bsonType": "date" }
+    }
+  }
+}

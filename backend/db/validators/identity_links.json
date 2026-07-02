@@ -1,0 +1,34 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "required": ["canonicalEmail"],
+    "properties": {
+      "canonicalEmail": { "bsonType": "string" },
+      "emailDomain":    { "bsonType": "string" },
+      "userType": {
+        "bsonType": "string",
+        "enum": ["staff", "student", "family", "contractor", "system", "unknown"]
+      },
+      "displayName":  { "bsonType": "string" },
+      "identifiers": {
+        "bsonType": "object",
+        "properties": {
+          "cadsEmployeeId": { "bsonType": "string" },
+          "psEmplid":       { "bsonType": "string" },
+          "ecmUserId":      { "bsonType": "string" },
+          "jspmUserId":     { "bsonType": "string" },
+          "midpointOid":    { "bsonType": "string" },
+          "ldapDn":         { "bsonType": "string" }
+        }
+      },
+      "lifecycleState": {
+        "bsonType": "string",
+        "enum": ["active", "inactive", "suspended", "deleted"]
+      },
+      "sourceSystems": { "bsonType": "array" },
+      "lastSeenAt":    { "bsonType": "date" },
+      "createdAt":     { "bsonType": "date" },
+      "updatedAt":     { "bsonType": "date" }
+    }
+  }
+}
