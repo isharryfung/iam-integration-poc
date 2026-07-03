@@ -47,6 +47,18 @@ function mapOperation(sourceSystem, sourceAction) {
   return 'CREATE_OR_UPDATE_IDENTITY';
 }
 
+function resolveSourceAction(event, normalized) {
+  if (event.rawPayload && typeof event.rawPayload.action === 'string') {
+    return event.rawPayload.action;
+  }
+
+  if (event.entitlement && typeof event.entitlement.action === 'string') {
+    return event.entitlement.action;
+  }
+
+  return normalized.entitlement.action;
+}
+
 function buildMidpointInput(event) {
   if (!event || !event.rawPayload || !event.sourceSystem) {
     throw new MidpointTransformError('Event is missing source payload or source system');
@@ -63,11 +75,7 @@ function buildMidpointInput(event) {
     event.correlationId,
     event.idempotencyKey
   );
-  const sourceAction = event.rawPayload && typeof event.rawPayload.action === 'string'
-    ? event.rawPayload.action
-    : event.entitlement && typeof event.entitlement.action === 'string'
-      ? event.entitlement.action
-      : normalized.entitlement.action;
+  const sourceAction = resolveSourceAction(event, normalized);
 
   return compactObject({
     meta: {
@@ -155,7 +163,7 @@ function validateMidpointInput(midpointInput) {
   }
 
   if (sourceSystem === 'PEOPLESOFT' && (!midpointInput.entitlement || !midpointInput.entitlement.roleName)) {
-    addIssue('missing', 'entitlement.roleName', 'PeopleSoft previews require a role or job code');
+    addIssue('missing', 'entitlement.roleName', 'Role name is required for PeopleSoft events');
   }
 
   return {

@@ -62,7 +62,8 @@ router.get('/preview/by-email', queryLimiter, async (req, res, next) => {
     if (eventId) filter.eventId = eventId;
     if (sourceSystem) filter.sourceSystem = sourceSystem;
 
-    const event = await InboundEvent.findOne(filter).sort(eventId ? {} : { createdAt: latest ? -1 : 1 });
+    const sort = eventId ? undefined : { createdAt: latest ? -1 : 1 };
+    const event = await InboundEvent.findOne(filter).sort(sort);
     if (!event) {
       return res.status(404).json({ error: 'Event not found for this user', email, eventId: eventId || undefined });
     }
