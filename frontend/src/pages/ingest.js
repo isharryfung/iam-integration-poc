@@ -116,7 +116,7 @@ export default function TestIngest() {
           setMappedPreview(data);
         } catch (err) {
           setMappedPreview(null);
-          setMappedPreviewError(err.error || err.message || 'Unable to generate People mapped payload preview');
+          setMappedPreviewError(err.error || err.message || 'Unable to generate PeopleSoft mapped payload preview');
         } finally {
           setMappedPreviewLoading(false);
         }
@@ -196,7 +196,7 @@ export default function TestIngest() {
         {sourceSystem === 'PEOPLESOFT' && (
           <div style={{ marginTop: 14 }}>
             <p style={{ marginBottom: 8, fontSize: 12, fontWeight: 600, color: '#334155' }}>
-              People mapped payload preview
+              PeopleSoft mapped payload preview
             </p>
 
             {mappedPreviewLoading && (
