@@ -198,21 +198,28 @@ function normalizePayload(raw, sourceSystem, correlationId, idempotencyKey) {
  */
 function validateEvent(normalized) {
   const transformErrors = Array.isArray(normalized.transformErrors) ? normalized.transformErrors : [];
-  const errors = [...transformErrors];
+  const errors = [];
+
+  function addError(message) {
+    if (message && !errors.includes(message)) errors.push(message);
+  }
+
+  transformErrors.forEach(addError);
+
   if (normalized.sourceSystem === 'PEOPLESOFT') {
     if (!normalized.identity.email && !normalized.identity.displayName) {
-      errors.push('Missing email or displayName in payload');
+      addError('Missing email or displayName in payload');
     }
   } else if (!normalized.identity.email) {
-    errors.push('Missing email in payload');
+    addError('Missing email in payload');
   }
 
   if (normalized.identity.email) {
     const { valid, reason } = validateEmailDomain(normalized.identity.email);
-    if (!valid) errors.push(reason);
+    if (!valid) addError(reason);
   }
-  if (!normalized.sourceSystem) errors.push('Missing sourceSystem');
-  return [...new Set(errors)];
+  if (!normalized.sourceSystem) addError('Missing sourceSystem');
+  return errors;
 }
 
 /**

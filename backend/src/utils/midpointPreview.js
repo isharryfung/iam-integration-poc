@@ -77,6 +77,13 @@ function normalizePeopleSoftPreviewPayload(event) {
   }).payload;
 }
 
+function isMissingRequiredIdentity(sourceSystem, email, displayName) {
+  if (sourceSystem === 'PEOPLESOFT') {
+    return !email && !displayName;
+  }
+  return !email;
+}
+
 function buildMidpointInput(event) {
   if (!event || !event.rawPayload || !event.sourceSystem) {
     throw new MidpointTransformError('Event is missing source payload or source system');
@@ -189,7 +196,7 @@ function validateMidpointInput(midpointInput) {
     : '';
   const application = requireValue(midpointInput.entitlement && midpointInput.entitlement.application, 'entitlement.application', 'Target application');
   const roleName = requireValue(midpointInput.entitlement && midpointInput.entitlement.roleName, 'entitlement.roleName', 'Role name');
-  if (!email && !(sourceSystem === 'PEOPLESOFT' && displayName)) {
+  if (isMissingRequiredIdentity(sourceSystem, email, displayName)) {
     addIssue(
       'missing',
       'identity.email',
