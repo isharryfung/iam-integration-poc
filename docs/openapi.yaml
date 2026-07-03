@@ -23,6 +23,8 @@ tags:
     description: Receive identity events from source systems
   - name: Users
     description: Per-user operational queries
+  - name: MidPoint
+    description: Preview the standardized MidPoint input generated from stored events
   - name: Access
     description: Real-time access decision
 
@@ -385,6 +387,127 @@ paths:
         "404":
           $ref: '#/components/responses/NotFound'
 
+  # ── MidPoint preview endpoints ──────────────────────────────────────────────
+  /api/v1/midpoint/events:
+    get:
+      summary: Search events for MidPoint preview
+      description: |
+        Lightweight event query for the MidPoint preview UI.
+        Supports search by email, source system, or exact event ID.
+      operationId: listMidpointPreviewEvents
+      tags: [MidPoint]
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - name: email
+          in: query
+          schema:
+            type: string
+            format: email
+        - name: sourceSystem
+          in: query
+          schema:
+            type: string
+            enum: [CADS, PEOPLESOFT, ECM, JSPM]
+        - name: eventId
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Matching events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MidpointEventList'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/midpoint/preview:
+    get:
+      summary: Preview transformed MidPoint JSON by event ID
+      description: |
+        Loads an existing inbound event, returns the original source payload,
+        the standardized MidPoint input JSON, and validation details.
+      operationId: getMidpointPreviewByEventId
+      tags: [MidPoint]
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - name: eventId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: MidPoint preview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MidpointPreviewResponse'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "422":
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /api/v1/midpoint/preview/by-email:
+    get:
+      summary: Preview transformed MidPoint JSON by email
+      description: |
+        Returns the latest stored event for the given email by default.
+        Optionally combine with `sourceSystem` or `eventId` to narrow the lookup.
+      operationId: getMidpointPreviewByEmail
+      tags: [MidPoint]
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - name: email
+          in: query
+          required: true
+          schema:
+            type: string
+            format: email
+        - name: latest
+          in: query
+          schema:
+            type: boolean
+            default: true
+        - name: sourceSystem
+          in: query
+          schema:
+            type: string
+            enum: [CADS, PEOPLESOFT, ECM, JSPM]
+        - name: eventId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: MidPoint preview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MidpointPreviewResponse'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "422":
+          $ref: '#/components/responses/UnprocessableEntity'
+
   # ── Access ──────────────────────────────────────────────────────────────────
   /user/access:
     get:
@@ -609,6 +732,112 @@ components:
         status:          { type: string }
         correlationId:   { type: string }
 
+    MidpointEventSummary:
+      type: object
+      properties:
+        eventId:      { type: string }
+        sourceSystem: { type: string, enum: [CADS, PEOPLESOFT, ECM, JSPM] }
+        email:        { type: string, nullable: true }
+        status:       { type: string }
+        action:       { type: string, nullable: true }
+        role:         { type: string, nullable: true }
+        receivedAt:   { type: string, format: date-time }
+        processedAt:  { type: string, format: date-time, nullable: true }
+
+    MidpointEventList:
+      type: object
+      properties:
+        total: { type: integer }
+        limit: { type: integer }
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/MidpointEventSummary'
+
+    MidpointValidationIssue:
+      type: object
+      properties:
+        field:   { type: string }
+        type:    { type: string, enum: [missing, invalid] }
+        message: { type: string }
+
+    MidpointValidationResult:
+      type: object
+      properties:
+        isValid: { type: boolean }
+        status:  { type: string, enum: [pass, fail] }
+        missingFields:
+          type: array
+          items: { type: string }
+        invalidFields:
+          type: array
+          items: { type: string }
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/MidpointValidationIssue'
+
+    MidpointMeta:
+      type: object
+      properties:
+        eventId:        { type: string }
+        eventTime:      { type: string, format: date-time }
+        sourceSystem:   { type: string, enum: [CADS, PEOPLESOFT, ECM, JSPM] }
+        correlationId:  { type: string, nullable: true }
+        idempotencyKey: { type: string, nullable: true }
+        operation:
+          type: string
+          enum: [CREATE_OR_UPDATE_IDENTITY, ASSIGN_ENTITLEMENT, REMOVE_ENTITLEMENT, SYNC_PROJECT_MEMBERSHIP]
+
+    MidpointIdentity:
+      type: object
+      properties:
+        email:       { type: string }
+        displayName: { type: string, nullable: true }
+        userType:    { type: string }
+        staffId:     { type: string, nullable: true }
+        studentId:   { type: string, nullable: true }
+
+    MidpointEntitlement:
+      type: object
+      properties:
+        application:   { type: string }
+        action:        { type: string, nullable: true }
+        roleName:      { type: string, nullable: true }
+        department:    { type: string, nullable: true }
+        validFrom:     { type: string, format: date-time, nullable: true }
+        validUntil:    { type: string, format: date-time, nullable: true }
+        documentClass: { type: string, nullable: true }
+        projectCode:   { type: string, nullable: true }
+
+    MidpointInput:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/MidpointMeta'
+        identity:
+          $ref: '#/components/schemas/MidpointIdentity'
+        entitlement:
+          $ref: '#/components/schemas/MidpointEntitlement'
+
+    MidpointPreviewResponse:
+      type: object
+      properties:
+        eventId:         { type: string }
+        sourceSystem:    { type: string, enum: [CADS, PEOPLESOFT, ECM, JSPM] }
+        email:           { type: string, nullable: true }
+        status:          { type: string }
+        receivedAt:      { type: string, format: date-time }
+        processedAt:     { type: string, format: date-time, nullable: true }
+        transformStatus: { type: string, example: success }
+        sourcePayload:
+          type: object
+          additionalProperties: true
+        midpointInput:
+          $ref: '#/components/schemas/MidpointInput'
+        validation:
+          $ref: '#/components/schemas/MidpointValidationResult'
+
     AccessDecision:
       type: object
       properties:
@@ -658,6 +887,12 @@ components:
             $ref: '#/components/schemas/Error'
     NotFound:
       description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    UnprocessableEntity:
+      description: Request was valid but the payload could not be transformed
       content:
         application/json:
           schema:
