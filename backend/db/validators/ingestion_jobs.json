@@ -1,0 +1,25 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "required": ["jobId", "sourceSystem"],
+    "properties": {
+      "jobId":          { "bsonType": "string" },
+      "jobType":        { "bsonType": "string", "enum": ["single", "batch"] },
+      "sourceSystem":   { "bsonType": "string" },
+      "correlationId":  { "bsonType": "string" },
+      "idempotencyKey": { "bsonType": "string" },
+      "status": {
+        "bsonType": "string",
+        "enum": ["received", "processing", "done", "partial_failure", "failed"]
+      },
+      "totalEvents":    { "bsonType": "int" },
+      "acceptedEvents": { "bsonType": "int" },
+      "rejectedEvents": { "bsonType": "int" },
+      "eventIds":       { "bsonType": "array" },
+      "errors":         { "bsonType": "array" },
+      "completedAt":    { "bsonType": "date" },
+      "createdAt":      { "bsonType": "date" },
+      "updatedAt":      { "bsonType": "date" }
+    }
+  }
+}

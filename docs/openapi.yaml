@@ -1,0 +1,676 @@
+openapi: 3.0.3
+info:
+  title: IAM Integration Platform API
+  version: "1.0.0"
+  description: |
+    API for the HKUST IAM Integration Platform POC.
+    Supports ingestion of identity events from CADS, PeopleSoft (SIS/FMS/HRMS),
+    ECM, and JSPM; event status tracking; user sync status queries; and
+    real-time access decisions.
+
+    **Authentication:** All endpoints require an `api_key` header.
+    The default POC key is `poc-dev-key-1234`.
+
+    **Email domains:** Currently only `@ust.hk` is accepted.
+    Future expansion: `@connect.ust.hk`, `@family.ust.hk`.
+
+servers:
+  - url: http://localhost:4000
+    description: Local development
+
+tags:
+  - name: Ingestion
+    description: Receive identity events from source systems
+  - name: Users
+    description: Per-user operational queries
+  - name: Access
+    description: Real-time access decision
+
+# ─────────────────────────────────────────────────────────────────────────────
+paths:
+
+  # ── Health ──────────────────────────────────────────────────────────────────
+  /health:
+    get:
+      summary: Health check
+      description: Returns OK if the backend is running. No auth required.
+      operationId: healthCheck
+      tags: []
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  # ── Ingestion ────────────────────────────────────────────────────────────────
+  /api/v1/inbound/events:
+    post:
+      summary: Ingest a single identity event
+      description: |
+        Unified ingestion endpoint for CADS, PeopleSoft, ECM, and JSPM.
+        The source system is identified via the `X-Source-System` header or
+        the `sourceSystem` field in the request body.
+
+        Returns 202 Accepted with an `eventId` for status tracking.
+        Returns 200 if the `Idempotency-Key` was already seen (duplicate).
+      operationId: ingestEvent
+      tags: [Ingestion]
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - $ref: '#/components/parameters/XSourceSystem'
+        - $ref: '#/components/parameters/XCorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestPayload'
+            examples:
+              cads:
+                summary: CADS HR event
+                value:
+                  employeeId: "E12345"
+                  employeeEmail: "john.doe@ust.hk"
+                  employeeName: "John Doe"
+                  department: "Finance Management Office"
+                  role: "APPROVER"
+                  action: "provision"
+              peoplesoft_hrms:
+                summary: PeopleSoft HRMS event
+                value:
+                  module: "HRMS"
+                  emplid: "P98765"
+                  email: "jane.smith@ust.hk"
+                  name: "Jane Smith"
+                  jobCode: "IT_ANALYST"
+                  department: "Information Technology"
+                  action: "update"
+              ecm:
+                summary: ECM access event
+                value:
+                  userId: "ECM-001"
+                  userEmail: "alice.chan@ust.hk"
+                  documentClass: "FINANCE_CONTRACTS"
+                  role: "READER"
+                  action: "provision"
+              jspm:
+                summary: JSPM project assignment
+                value:
+                  projectCode: "PROJ-2026-001"
+                  userEmail: "bob.lee@ust.hk"
+                  projectRole: "PROJECT_MANAGER"
+                  action: "assign"
+      responses:
+        "202":
+          description: Event accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResponse'
+        "200":
+          description: Duplicate event (idempotency key already seen)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResponse'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "500":
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/inbound/events:batch:
+    post:
+      summary: Ingest a batch of events
+      description: |
+        Submit multiple events in one request.
+        Each event in the `events` array may include an optional `_idempotencyKey` field.
+        Returns a summary of accepted and rejected events.
+      operationId: ingestBatch
+      tags: [Ingestion]
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - $ref: '#/components/parameters/XSourceSystem'
+        - $ref: '#/components/parameters/XCorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [events]
+              properties:
+                events:
+                  type: array
+                  minItems: 1
+                  items:
+                    $ref: '#/components/schemas/IngestPayload'
+      responses:
+        "202":
+          description: Batch accepted (may include partial failures)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchResponse'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/inbound/events/{eventId}/status:
+    get:
+      summary: Get event processing status
+      description: |
+        Returns the current processing lifecycle of a specific event.
+        Status values: `received` → `validated` → `sent_to_midpoint` → `success`
+        or `failed` → `retrying` → `dead_letter`
+      operationId: getEventStatus
+      tags: [Ingestion]
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Event status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventStatus'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+
+  # ── Source-specific aliases (same handler as /events) ──────────────────────
+  /api/v1/inbound/cads:
+    post:
+      summary: Ingest CADS event (alias)
+      description: Alias for `POST /api/v1/inbound/events` with `X-Source-System: CADS`
+      operationId: ingestCads
+      tags: [Ingestion]
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestPayload'
+      responses:
+        "202":
+          $ref: '#/components/responses/Accepted'
+
+  /api/v1/inbound/peoplesoft:
+    post:
+      summary: Ingest PeopleSoft event (alias)
+      description: Alias for `POST /api/v1/inbound/events` with `X-Source-System: PEOPLESOFT`
+      operationId: ingestPeopleSoft
+      tags: [Ingestion]
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestPayload'
+      responses:
+        "202":
+          $ref: '#/components/responses/Accepted'
+
+  /api/v1/inbound/ecm:
+    post:
+      summary: Ingest ECM event (alias)
+      description: Alias for `POST /api/v1/inbound/events` with `X-Source-System: ECM`
+      operationId: ingestECM
+      tags: [Ingestion]
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestPayload'
+      responses:
+        "202":
+          $ref: '#/components/responses/Accepted'
+
+  /api/v1/inbound/jspm:
+    post:
+      summary: Ingest JSPM event (alias)
+      description: Alias for `POST /api/v1/inbound/events` with `X-Source-System: JSPM`
+      operationId: ingestJSPM
+      tags: [Ingestion]
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestPayload'
+      responses:
+        "202":
+          $ref: '#/components/responses/Accepted'
+
+  # ── User endpoints ──────────────────────────────────────────────────────────
+  /api/v1/users/{email}/sync-status:
+    get:
+      summary: Get user sync status
+      description: |
+        Returns the latest sync and provisioning summary for a user.
+        Aggregated from all source systems that have contributed events.
+      operationId: getUserSyncStatus
+      tags: [Users]
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - $ref: '#/components/parameters/EmailPath'
+      responses:
+        "200":
+          description: User sync status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncStatus'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/users/{email}/events:
+    get:
+      summary: Get user event history
+      description: |
+        Returns paginated event history for a user.
+        Filter by source system or processing status.
+      operationId: getUserEvents
+      tags: [Users]
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - $ref: '#/components/parameters/EmailPath'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: sourceSystem
+          in: query
+          schema:
+            type: string
+            enum: [CADS, PEOPLESOFT, ECM, JSPM]
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [received, validated, validation_failed, sent_to_midpoint, success, failed, retrying, dead_letter]
+      responses:
+        "200":
+          description: User event list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email:   { type: string }
+                  total:   { type: integer }
+                  page:    { type: integer }
+                  limit:   { type: integer }
+                  events:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EventStatus'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/users/{email}/replay:
+    post:
+      summary: Replay failed event (admin)
+      description: |
+        Replay the most recent failed, dead-letter, or validation-failed event for the user.
+        Optionally specify a specific `eventId` in the request body to replay that event.
+        Creates a new InboundEvent from the original raw payload.
+      operationId: replayUserEvent
+      tags: [Users]
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - $ref: '#/components/parameters/EmailPath'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                eventId:
+                  type: string
+                  description: Specific event ID to replay (optional; defaults to latest failed)
+      responses:
+        "202":
+          description: Replay initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReplayResponse'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+
+  # ── Access ──────────────────────────────────────────────────────────────────
+  /user/access:
+    get:
+      summary: Access decision
+      description: |
+        Returns a real-time access decision for a user against a specific service.
+        Used by application gateways during login/authorization.
+
+        User identity can be provided via:
+        - `?email=user@ust.hk` query parameter
+        - `x-user-email` request header
+      operationId: getAccess
+      tags: [Access]
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - name: service_id
+          in: header
+          required: true
+          description: Target service being checked (e.g. ECM, PORTAL)
+          schema:
+            type: string
+        - name: email
+          in: query
+          description: User email to evaluate
+          schema:
+            type: string
+            format: email
+        - name: x-user-email
+          in: header
+          description: Alternative user email via header (used if no ?email= param)
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Access decision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessDecision'
+              example:
+                email: user@ust.hk
+                serviceId: ECM
+                decision: ALLOW
+                status: ACTIVE
+                validity:
+                  start: "2026-07-01T00:00:00Z"
+                  end: null
+                  isNowValid: true
+                attributes:
+                  role: APPROVER
+                  department: FMO
+                  dataSecurityLevel: L1
+                sourceOfTruth: IAM_POC
+                sourceSystems: [CADS, ECM]
+                checkedAt: "2026-07-02T12:00:00Z"
+                correlationId: "uuid-here"
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+
+# ─────────────────────────────────────────────────────────────────────────────
+components:
+
+  parameters:
+    ApiKey:
+      name: api_key
+      in: header
+      required: true
+      description: API key for authentication
+      schema:
+        type: string
+        example: poc-dev-key-1234
+
+    XSourceSystem:
+      name: X-Source-System
+      in: header
+      required: false
+      schema:
+        type: string
+        enum: [CADS, PEOPLESOFT, ECM, JSPM]
+
+    XCorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Unique key to prevent duplicate processing
+      schema:
+        type: string
+
+    EmailPath:
+      name: email
+      in: path
+      required: true
+      schema:
+        type: string
+        format: email
+        example: user@ust.hk
+
+  schemas:
+    IngestPayload:
+      type: object
+      description: |
+        Flexible payload — field names vary by source system.
+        The platform normalises each source into a canonical format.
+      additionalProperties: true
+      example:
+        employeeEmail: "john.doe@ust.hk"
+        employeeId: "E12345"
+        action: "provision"
+
+    IngestResponse:
+      type: object
+      properties:
+        message:       { type: string }
+        eventId:       { type: string }
+        jobId:         { type: string }
+        status:        { type: string }
+        correlationId: { type: string }
+
+    BatchResponse:
+      type: object
+      properties:
+        message:       { type: string }
+        jobId:         { type: string }
+        correlationId: { type: string }
+        summary:
+          type: object
+          properties:
+            total:    { type: integer }
+            accepted: { type: integer }
+            rejected: { type: integer }
+        accepted:
+          type: array
+          items:
+            type: object
+            properties:
+              index:     { type: integer }
+              eventId:   { type: string }
+              duplicate: { type: boolean }
+        rejected:
+          type: array
+          items:
+            type: object
+            properties:
+              index:  { type: integer }
+              reason: { type: string }
+
+    EventStatus:
+      type: object
+      properties:
+        eventId:       { type: string }
+        jobId:         { type: string }
+        sourceSystem:  { type: string }
+        status:
+          type: string
+          enum: [received, validated, validation_failed, sent_to_midpoint, success, failed, retrying, dead_letter]
+        correlationId: { type: string }
+        identity:
+          type: object
+          properties:
+            email:       { type: string }
+            emailDomain: { type: string }
+            displayName: { type: string }
+            userType:    { type: string }
+        validationErrors:
+          type: array
+          items: { type: string }
+        retryCount:    { type: integer }
+        lastError:     { type: string }
+        receivedAt:    { type: string, format: date-time }
+        processedAt:   { type: string, format: date-time }
+
+    SyncStatus:
+      type: object
+      properties:
+        email:                { type: string }
+        emailDomain:          { type: string }
+        displayName:          { type: string }
+        userType:             { type: string }
+        lastSourceSystem:     { type: string }
+        lastEventId:          { type: string }
+        lastEventTime:        { type: string, format: date-time }
+        lastProcessingStatus: { type: string }
+        lastSuccessAt:        { type: string, format: date-time }
+        lastFailureAt:        { type: string, format: date-time }
+        lastError:            { type: string }
+        lastMidpointStatus:   { type: string }
+        totalEventsReceived:  { type: integer }
+        totalEventsFailed:    { type: integer }
+        activeFlags:
+          type: object
+          properties:
+            hasRecentFailure: { type: boolean }
+            hasPendingRetry:  { type: boolean }
+            isInDeadLetter:   { type: boolean }
+        sourceContributions:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              lastEventAt: { type: string, format: date-time }
+              lastStatus:  { type: string }
+              psModule:    { type: string }
+
+    ReplayResponse:
+      type: object
+      properties:
+        message:         { type: string }
+        originalEventId: { type: string }
+        replayEventId:   { type: string }
+        status:          { type: string }
+        correlationId:   { type: string }
+
+    AccessDecision:
+      type: object
+      properties:
+        email:     { type: string }
+        serviceId: { type: string }
+        decision:
+          type: string
+          enum: [ALLOW, DENY]
+        status:    { type: string }
+        validity:
+          type: object
+          properties:
+            start:      { type: string, format: date-time, nullable: true }
+            end:        { type: string, format: date-time, nullable: true }
+            isNowValid: { type: boolean }
+        attributes:
+          type: object
+          properties:
+            role:               { type: string }
+            department:         { type: string }
+            dataSecurityLevel:  { type: string }
+        sourceOfTruth:  { type: string }
+        sourceSystems:
+          type: array
+          items: { type: string }
+        checkedAt:     { type: string, format: date-time }
+        correlationId: { type: string }
+
+    Error:
+      type: object
+      properties:
+        error:  { type: string }
+        detail: { type: string }
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or invalid api_key
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Accepted:
+      description: Event accepted for processing
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/IngestResponse'

@@ -1,0 +1,48 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "required": ["eventId", "sourceSystem"],
+    "properties": {
+      "eventId":       { "bsonType": "string" },
+      "jobId":         { "bsonType": "string" },
+      "sourceSystem":  { "bsonType": "string" },
+      "correlationId": { "bsonType": "string" },
+      "idempotencyKey":{ "bsonType": "string" },
+      "identity": {
+        "bsonType": "object",
+        "properties": {
+          "email":       { "bsonType": "string" },
+          "emailDomain": { "bsonType": "string" },
+          "staffId":     { "bsonType": "string" },
+          "studentId":   { "bsonType": "string" },
+          "displayName": { "bsonType": "string" },
+          "userType": {
+            "bsonType": "string",
+            "enum": ["staff", "student", "family", "contractor", "system", "unknown"]
+          }
+        }
+      },
+      "entitlement": {
+        "bsonType": "object",
+        "properties": {
+          "action": {
+            "bsonType": "string",
+            "enum": ["provision", "deprovision", "update", "sync", "unknown"]
+          },
+          "targetSystem": { "bsonType": "string" },
+          "role":         { "bsonType": "string" },
+          "department":   { "bsonType": "string" },
+          "validFrom":    { "bsonType": "date" },
+          "validUntil":   { "bsonType": "date" }
+        }
+      },
+      "status": {
+        "bsonType": "string",
+        "enum": ["received", "validated", "validation_failed", "sent_to_midpoint", "success", "failed", "retrying", "dead_letter"]
+      },
+      "retryCount":   { "bsonType": "int" },
+      "createdAt":    { "bsonType": "date" },
+      "updatedAt":    { "bsonType": "date" }
+    }
+  }
+}

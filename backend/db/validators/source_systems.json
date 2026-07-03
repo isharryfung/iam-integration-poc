@@ -1,0 +1,17 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "required": ["systemId", "displayName"],
+    "properties": {
+      "systemId":      { "bsonType": "string", "description": "Unique system identifier (e.g. CADS, PEOPLESOFT)" },
+      "displayName":   { "bsonType": "string" },
+      "description":   { "bsonType": "string" },
+      "contactEmail":  { "bsonType": "string" },
+      "active":        { "bsonType": "bool" },
+      "schemaVersion": { "bsonType": "string" },
+      "callbackUrl":   { "bsonType": "string" },
+      "createdAt":     { "bsonType": "date" },
+      "updatedAt":     { "bsonType": "date" }
+    }
+  }
+}

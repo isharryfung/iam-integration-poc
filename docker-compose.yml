@@ -1,0 +1,85 @@
+version: '3.9'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# IAM Integration POC — Docker Compose
+#
+# Usage:
+#   docker compose up --build
+#
+# Services:
+#   mongo     → MongoDB on port 27017
+#   backend   → Express API on port 4000
+#   frontend  → Next.js UI on port 3000
+#
+# Open http://localhost:3000 in your browser once all services are healthy.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ── MongoDB ───────────────────────────────────────────────────────────────
+  mongo:
+    image: mongo:8.0
+    container_name: iam_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: iam_poc
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── Backend (Express + Mongoose) ──────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: iam_backend
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      MONGO_URI: mongodb://mongo:27017/iam_poc
+      # Comma-separated list of valid API keys for the POC
+      API_KEYS: poc-dev-key-1234,poc-dev-key-5678
+      # Allowed email domains (expand when connect/family go live)
+      ALLOWED_EMAIL_DOMAINS: ust.hk
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ── Frontend (Next.js) ────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # The frontend calls the backend from the BROWSER, so use localhost
+        NEXT_PUBLIC_API_URL: http://localhost:4000
+        NEXT_PUBLIC_API_KEY: poc-dev-key-1234
+    container_name: iam_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+      NEXT_PUBLIC_API_KEY: poc-dev-key-1234
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  mongo_data:
+    driver: local

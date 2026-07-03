@@ -1,0 +1,28 @@
+{
+  "$jsonSchema": {
+    "bsonType": "object",
+    "required": ["deadLetterId", "inboundEventId", "sourceSystem", "failureReason"],
+    "properties": {
+      "deadLetterId":   { "bsonType": "string" },
+      "inboundEventId": { "bsonType": "string" },
+      "jobId":          { "bsonType": "string" },
+      "sourceSystem":   { "bsonType": "string" },
+      "correlationId":  { "bsonType": "string" },
+      "email":          { "bsonType": "string" },
+      "failureReason":  { "bsonType": "string" },
+      "failureCode":    { "bsonType": "string" },
+      "lastError":      { "bsonType": "string" },
+      "totalAttempts":  { "bsonType": "int" },
+      "status": {
+        "bsonType": "string",
+        "enum": ["pending", "replaying", "resolved", "discarded"]
+      },
+      "resolvedBy":    { "bsonType": "string" },
+      "resolvedAt":    { "bsonType": "date" },
+      "replayEventId": { "bsonType": "string" },
+      "notes":         { "bsonType": "string" },
+      "createdAt":     { "bsonType": "date" },
+      "updatedAt":     { "bsonType": "date" }
+    }
+  }
+}
