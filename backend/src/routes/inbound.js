@@ -8,6 +8,7 @@ const { writeAudit } = require('../utils/audit');
 const { ingestLimiter, queryLimiter } = require('../middleware/rateLimiter');
 const { transformCadsRow, cadsIdentifierKeys } = require('../transformers/cads.transformer');
 const { buildEcmCombinedPayloads } = require('../transformers/ecm.transformer');
+const { transformJspmRow, jspmIdentifierKeys, normalizeJspmHeader } = require('../transformers/jspm.transformer');
 
 /**
  * POST /api/v1/inbound/events
@@ -275,7 +276,49 @@ router.post('/ecm/preview', queryLimiter, async (req, res) => {
 router.post('/cads',       ingestLimiter, setSource('CADS'),       handleCadsIngest);
 router.post('/peoplesoft', ingestLimiter, setSource('PEOPLESOFT'), handleSingleIngest);
 router.post('/ecm',        ingestLimiter, setSource('ECM'),        handleSingleIngest);
-router.post('/jspm',       ingestLimiter, setSource('JSPM'),       handleSingleIngest);
+router.post('/jspm',       ingestLimiter, setSource('JSPM'),       handleJspmIngest);
+
+/**
+ * POST /api/v1/inbound/jspm/preview
+ * Dry-run: transform a raw JSPM CSV row into canonical JSON without persisting.
+ * Returns { isValid, errors, sourceRow, mappedPayload }.
+ *
+ * Accepts either:
+ *   a) A raw JSPM CSV row (keys: ROLE_GROUP_DESC, USER_NAM, ROLE_GROUP_ID_1, DEPTID, …)
+ *   b) A pre-built canonical JSPM payload ({ meta: { sourceSystem: 'JSPM' }, … })
+ */
+router.post('/jspm/preview', queryLimiter, async (req, res) => {
+  const body = req.body || {};
+
+  // Accept a pre-built canonical payload directly
+  if (body.meta && body.meta.sourceSystem === 'JSPM') {
+    return res.json({
+      sourceSystem: 'JSPM',
+      isValid: true,
+      errors: [],
+      sourceRow: null,
+      mappedPayload: body,
+    });
+  }
+
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return res.status(400).json({ error: 'Request body must be a JSON object (JSPM row or canonical payload)' });
+  }
+
+  const idempotencyKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'];
+  const result = transformJspmRow(body, {
+    correlationId: req.correlationId,
+    idempotencyKey,
+  });
+
+  return res.json({
+    sourceSystem: 'JSPM',
+    isValid: result.isValid,
+    errors: result.errors,
+    sourceRow: body,
+    mappedPayload: result.payload,
+  });
+});
 
 /**
  * POST /api/v1/inbound/cads/transform
@@ -313,6 +356,82 @@ function setSource(system) {
     req.headers['x-source-system'] = system;
     next();
   };
+}
+
+/**
+ * Detect whether a request body looks like a raw JSPM CSV row
+ * (has JSPM-specific column headers) rather than a canonical JSON payload.
+ * Requires at least two of the core JSPM column markers.
+ */
+function isJspmRawRow(body) {
+  if (!body || typeof body !== 'object') return false;
+  if (body.meta || body.identity || body.entitlement) return false;
+  const normalizedKeys = Object.keys(body).map(normalizeJspmHeader);
+  const hits = jspmIdentifierKeys.filter((marker) => normalizedKeys.includes(marker));
+  return hits.length >= 2;
+}
+
+/**
+ * JSPM-specific ingestion handler.
+ * Accepts either:
+ *   a) Raw JSPM CSV row  → transformed via transformJspmRow before ingest.
+ *   b) Canonical JSON    → passed through unchanged (same as handleSingleIngest).
+ */
+async function handleJspmIngest(req, res) {
+  const start = Date.now();
+  const correlationId = req.correlationId;
+  const sourceSystem = req.headers['x-source-system'];
+  const idempotencyKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'];
+  const jobId = uuidv4();
+
+  let body = req.body;
+
+  // Transform raw JSPM row into canonical payload before ingesting
+  if (isJspmRawRow(body)) {
+    const transformed = transformJspmRow(body, { correlationId });
+
+    if (!transformed.isValid) {
+      return res.status(422).json({
+        error: 'JSPM row failed transformation validation',
+        errors: transformed.errors,
+      });
+    }
+
+    body = transformed.payload;
+  }
+
+  const job = await IngestionJob.create({
+    jobId,
+    jobType: 'single',
+    sourceSystem,
+    correlationId,
+    idempotencyKey,
+    rawPayload: req.body,
+  });
+
+  const { event, duplicate } = await ingestEvent(body, sourceSystem, correlationId, idempotencyKey, jobId);
+
+  await IngestionJob.findByIdAndUpdate(job._id, {
+    $set: { status: 'done', acceptedEvents: 1, eventIds: [event.eventId], completedAt: new Date() },
+  });
+
+  await writeAudit({
+    correlationId,
+    actor: { type: 'api_client', apiKeyId: req.apiKeyId },
+    action: 'ingest_event',
+    resource: { type: 'inbound_event', id: event.eventId, email: event.identity && event.identity.email },
+    outcome: 'success',
+    httpStatus: duplicate ? 200 : 202,
+    durationMs: Date.now() - start,
+  });
+
+  return res.status(duplicate ? 200 : 202).json({
+    message: duplicate ? 'Duplicate event — already processed' : 'Event accepted',
+    eventId: event.eventId,
+    jobId,
+    status: event.status,
+    correlationId,
+  });
 }
 
 /**

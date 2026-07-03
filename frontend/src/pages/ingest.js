@@ -45,11 +45,12 @@ const SAMPLE_PAYLOADS = {
     ],
   },
   JSPM: {
-    projectCode: 'PROJ-2026-001',
-    userEmail: 'bob.lee@ust.hk',
-    userName: 'Bob Lee',
-    projectRole: 'PROJECT_MANAGER',
-    action: 'assign',
+    ROLE_GROUP_DESC:  'Dept Salary Plan Owner',
+    USER_NAM:         'pmshr',
+    ROLE_GROUP_ID_1:  '2019120201000000000005',
+    SETID_DEPT:       'HKUST',
+    DEPTID:           '22000',
+    ZR_TEAM_UNIT_CDE: '',
   },
 };
 
@@ -99,6 +100,9 @@ export default function TestIngest() {
   const [ecmPreview, setEcmPreview] = useState(null);
   const [ecmPreviewLoading, setEcmPreviewLoading] = useState(false);
   const [ecmPreviewError, setEcmPreviewError] = useState('');
+  const [jspmPreview, setJspmPreview] = useState(null);
+  const [jspmPreviewLoading, setJspmPreviewLoading] = useState(false);
+  const [jspmPreviewError, setJspmPreviewError] = useState('');
 
   function onSourceChange(src) {
     setSourceSystem(src);
@@ -110,6 +114,8 @@ export default function TestIngest() {
     setMappedPreviewError('');
     setEcmPreview(null);
     setEcmPreviewError('');
+    setJspmPreview(null);
+    setJspmPreviewError('');
   }
 
   function validateJson(val) {
@@ -211,6 +217,45 @@ export default function TestIngest() {
         setEcmPreviewError(err.error || err.message || 'Unable to generate ECM combined payload preview');
       } finally {
         setEcmPreviewLoading(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [payload, sourceSystem]);
+
+  useEffect(() => {
+    if (sourceSystem !== 'JSPM') {
+      setJspmPreview(null);
+      setJspmPreviewLoading(false);
+      setJspmPreviewError('');
+      return;
+    }
+
+    let parsedPayload;
+    try {
+      parsedPayload = JSON.parse(payload);
+    } catch {
+      setJspmPreview(null);
+      setJspmPreviewLoading(false);
+      setJspmPreviewError('');
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setJspmPreviewLoading(true);
+      setJspmPreviewError('');
+      try {
+        const data = await apiFetch('/api/v1/inbound/jspm/preview', {
+          method: 'POST',
+          headers: { 'X-Source-System': 'JSPM', 'Idempotency-Key': `ui-jspm-preview-${Date.now()}` },
+          body: JSON.stringify(parsedPayload),
+        });
+        setJspmPreview(data);
+      } catch (err) {
+        setJspmPreview(null);
+        setJspmPreviewError(err.error || err.message || 'Unable to generate JSPM mapped payload preview');
+      } finally {
+        setJspmPreviewLoading(false);
       }
     }, 300);
 
@@ -394,6 +439,63 @@ export default function TestIngest() {
                     </pre>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {sourceSystem === 'JSPM' && (
+          <div style={{ marginTop: 14 }}>
+            <p style={{ marginBottom: 8, fontSize: 12, fontWeight: 600, color: '#334155' }}>
+              JSPM mapped payload preview
+            </p>
+            <p style={{ marginTop: 0, marginBottom: 8, fontSize: 12, color: '#64748b' }}>
+              Maps raw JSPM CSV row fields (ROLE_GROUP_DESC, USER_NAM, ROLE_GROUP_ID_1, DEPTID, …) to canonical JSON.
+            </p>
+
+            {jspmPreviewLoading && (
+              <p style={{ margin: 0, color: '#64748b', fontSize: 12 }}>Generating preview…</p>
+            )}
+
+            {jspmPreviewError && (
+              <div style={{ background: '#fee2e2', color: '#991b1b', padding: 10, borderRadius: 8, fontSize: 12 }}>
+                ⚠️ {jspmPreviewError}
+              </div>
+            )}
+
+            {jspmPreview && (
+              <div
+                style={{
+                  marginTop: 8,
+                  border: '1px solid #bfdbfe',
+                  borderRadius: 8,
+                  background: '#eff6ff',
+                  padding: 12,
+                }}
+              >
+                <p style={{ marginTop: 0, marginBottom: 8, fontSize: 12, color: jspmPreview.isValid ? '#065f46' : '#92400e' }}>
+                  {jspmPreview.isValid ? '✅ JSPM mapping validation passed' : '⚠️ JSPM mapping issues found'}
+                </p>
+                {!jspmPreview.isValid && jspmPreview.errors && jspmPreview.errors.length > 0 && (
+                  <ul style={{ marginTop: 0, marginBottom: 10, paddingLeft: 18, fontSize: 12, color: '#92400e' }}>
+                    {jspmPreview.errors.map((item, i) => <li key={i}>{item}</li>)}
+                  </ul>
+                )}
+                {jspmPreview.mappedPayload && (
+                  <pre
+                    style={{
+                      margin: 0,
+                      background: '#0f172a',
+                      color: '#e2e8f0',
+                      borderRadius: 8,
+                      padding: 12,
+                      fontSize: 12,
+                      overflowX: 'auto',
+                    }}
+                  >
+                    {JSON.stringify(jspmPreview.mappedPayload, null, 2)}
+                  </pre>
+                )}
               </div>
             )}
           </div>
