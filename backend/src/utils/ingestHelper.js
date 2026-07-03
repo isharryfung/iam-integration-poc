@@ -6,6 +6,16 @@ const { validateEmailDomain, extractDomain } = require('./emailValidation');
 const { refreshSyncStatus } = require('./syncStatus');
 
 /**
+ * Convert a date value (string or Date) to a Date object, falling back to
+ * a raw fallback value from the source payload. Returns undefined if absent.
+ */
+function toEntitlementDate(primary, fallback) {
+  if (primary) return new Date(primary);
+  if (fallback) return new Date(fallback);
+  return undefined;
+}
+
+/**
  * Map raw source payload into an InboundEvent document.
  * Handles CADS, PeopleSoft (SIS/FMS/HRMS), ECM, JSPM payloads.
  */
@@ -22,16 +32,34 @@ function normalizePayload(raw, sourceSystem, correlationId, idempotencyKey) {
   let role, department, targetSystem, validFrom, validUntil;
 
   if (src === 'CADS') {
-    email       = raw.email || raw.employeeEmail;
-    displayName = raw.displayName || raw.name || raw.employeeName;
-    staffId     = raw.employeeId || raw.staffId;
-    userType    = 'staff';
-    cadsEmployeeId = raw.employeeId;
-    cadsOrgUnit    = raw.orgUnit || raw.department;
-    action      = raw.action || 'sync';
-    role        = raw.role || raw.jobTitle;
-    department  = raw.department || raw.orgUnit;
-    targetSystem = 'CADS';
+    // Support both legacy flat CADS payload and canonical transformer output
+    if (raw.identity && raw.entitlement) {
+      // Canonical format (from transformCadsRow)
+      email          = raw.identity.email;
+      displayName    = raw.identity.displayName || null;
+      staffId        = raw.identity.staffId || null;
+      userType       = 'staff';
+      cadsEmployeeId = staffId;
+      cadsOrgUnit    = raw.entitlement.departmentOrProject || null;
+      action         = raw.entitlement.action || 'sync';
+      role           = raw.entitlement.roleName;
+      department     = raw.entitlement.departmentOrProject;
+      validFrom      = raw.entitlement.validFrom  ? raw.entitlement.validFrom  : undefined;
+      validUntil     = raw.entitlement.validTo    ? raw.entitlement.validTo    : undefined;
+      targetSystem   = 'CADS';
+    } else {
+      // Legacy flat format
+      email          = raw.email || raw.employeeEmail;
+      displayName    = raw.displayName || raw.name || raw.employeeName;
+      staffId        = raw.employeeId || raw.staffId;
+      userType       = 'staff';
+      cadsEmployeeId = raw.employeeId;
+      cadsOrgUnit    = raw.orgUnit || raw.department;
+      action         = raw.action || 'sync';
+      role           = raw.role || raw.jobTitle;
+      department     = raw.department || raw.orgUnit;
+      targetSystem   = 'CADS';
+    }
   } else if (src === 'PEOPLESOFT') {
     // PeopleSoft can be SIS (student), FMS (finance), HRMS (HR)
     psModule    = (raw.module || raw.psModule || 'UNKNOWN').toUpperCase();
@@ -90,11 +118,12 @@ function normalizePayload(raw, sourceSystem, correlationId, idempotencyKey) {
       targetSystem,
       role,
       department,
-      validFrom:   raw.validFrom  ? new Date(raw.validFrom)  : undefined,
-      validUntil:  raw.validUntil ? new Date(raw.validUntil) : undefined,
+      validFrom:  toEntitlementDate(validFrom, raw.validFrom),
+      validUntil: toEntitlementDate(validUntil, raw.validUntil),
     },
     sourceData: {
       cadsEmployeeId, cadsOrgUnit,
+      cadsAttributes: (src === 'CADS' && raw.attributes) ? raw.attributes : undefined,
       psModule, psRecordType, psEmplid,
       ecmUserId, ecmDocumentClass,
       jspmProjectCode, jspmRole,

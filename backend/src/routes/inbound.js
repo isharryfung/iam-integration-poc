@@ -5,6 +5,7 @@ const IngestionJob = require('../models/IngestionJob');
 const { ingestEvent } = require('../utils/ingestHelper');
 const { writeAudit } = require('../utils/audit');
 const { ingestLimiter, queryLimiter } = require('../middleware/rateLimiter');
+const { transformCadsRow, cadsIdentifierKeys } = require('../transformers/cads.transformer');
 
 /**
  * POST /api/v1/inbound/events
@@ -199,16 +200,131 @@ router.get('/events/:eventId/status', queryLimiter, async (req, res) => {
 });
 
 // ── Source-specific alias routes (all route to the same ingest handler) ──────
-router.post('/cads',       ingestLimiter, setSource('CADS'),       handleSingleIngest);
+router.post('/cads',       ingestLimiter, setSource('CADS'),       handleCadsIngest);
 router.post('/peoplesoft', ingestLimiter, setSource('PEOPLESOFT'), handleSingleIngest);
 router.post('/ecm',        ingestLimiter, setSource('ECM'),        handleSingleIngest);
 router.post('/jspm',       ingestLimiter, setSource('JSPM'),       handleSingleIngest);
+
+/**
+ * POST /api/v1/inbound/cads/transform
+ * Dry-run: transform a raw CADS table row into canonical JSON without persisting.
+ * Returns { isValid, errors, payload } so callers can preview the mapping.
+ */
+router.post('/cads/transform', ingestLimiter, async (req, res) => {
+  const row = req.body;
+  if (!row || typeof row !== 'object' || Array.isArray(row)) {
+    return res.status(400).json({ error: 'Request body must be a JSON object (CADS row)' });
+  }
+
+  const result = transformCadsRow(row, {
+    correlationId: req.correlationId,
+  });
+
+  if (!result.isValid) {
+    return res.status(422).json({
+      error: 'CADS row failed validation',
+      isValid: false,
+      errors: result.errors,
+      payload: result.payload,
+    });
+  }
+
+  return res.status(200).json({
+    isValid: true,
+    errors: [],
+    payload: result.payload,
+  });
+});
 
 function setSource(system) {
   return (req, _res, next) => {
     req.headers['x-source-system'] = system;
     next();
   };
+}
+
+/**
+ * Detect whether a request body looks like a raw CADS table row
+ * (has CADS-specific column headers) rather than a canonical JSON payload.
+ * Canonical payloads have top-level `meta`, `identity`, or `entitlement` keys.
+ *
+ * Requires at least two of the core CADS column markers (from cadsIdentifierKeys)
+ * to reduce false-positive risk from generic payloads.
+ */
+function isCadsRawRow(body) {
+  if (!body || typeof body !== 'object') return false;
+  if (body.meta || body.identity || body.entitlement) return false;
+  const normalizedKeys = Object.keys(body).map((k) => String(k).trim());
+  const hits = cadsIdentifierKeys.filter((marker) => normalizedKeys.includes(marker));
+  return hits.length >= 2;
+}
+
+/**
+ * CADS-specific ingestion handler.
+ * Accepts either:
+ *   a) Raw CADS table row  → transformed via transformCadsRow before ingest.
+ *   b) Canonical JSON      → passed through unchanged (same as handleSingleIngest).
+ */
+async function handleCadsIngest(req, res) {
+  const start = Date.now();
+  const correlationId = req.correlationId;
+  const sourceSystem = req.headers['x-source-system'];
+  const idempotencyKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'];
+  const jobId = uuidv4();
+
+  let body = req.body;
+
+  // Transform raw CADS row into canonical payload before ingesting
+  if (isCadsRawRow(body)) {
+    const transformed = transformCadsRow(body, {
+      correlationId,
+    });
+
+    if (!transformed.isValid) {
+      return res.status(422).json({
+        error: 'CADS row failed transformation validation',
+        errors: transformed.errors,
+      });
+    }
+
+    // Use canonical payload for ingest; prefer transformer-generated idempotency key
+    body = transformed.payload;
+  }
+
+  const job = await IngestionJob.create({
+    jobId,
+    jobType: 'single',
+    sourceSystem,
+    correlationId,
+    idempotencyKey,
+    // Store the original request body (raw row or canonical) for audit/replay traceability.
+    // The InboundEvent will store the canonical payload that was actually processed.
+    rawPayload: req.body,
+  });
+
+  const { event, duplicate } = await ingestEvent(body, sourceSystem, correlationId, idempotencyKey, jobId);
+
+  await IngestionJob.findByIdAndUpdate(job._id, {
+    $set: { status: 'done', acceptedEvents: 1, eventIds: [event.eventId], completedAt: new Date() },
+  });
+
+  await writeAudit({
+    correlationId,
+    actor: { type: 'api_client', apiKeyId: req.apiKeyId },
+    action: 'ingest_event',
+    resource: { type: 'inbound_event', id: event.eventId, email: event.identity && event.identity.email },
+    outcome: 'success',
+    httpStatus: duplicate ? 200 : 202,
+    durationMs: Date.now() - start,
+  });
+
+  return res.status(duplicate ? 200 : 202).json({
+    message: duplicate ? 'Duplicate event — already processed' : 'Event accepted',
+    eventId: event.eventId,
+    jobId,
+    status: event.status,
+    correlationId,
+  });
 }
 
 async function handleSingleIngest(req, res) {

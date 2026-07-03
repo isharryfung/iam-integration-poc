@@ -135,7 +135,8 @@ Default POC key: `poc-dev-key-1234`
 | `POST` | `/api/v1/inbound/events` | Unified event ingestion |
 | `POST` | `/api/v1/inbound/events:batch` | Batch ingestion |
 | `GET` | `/api/v1/inbound/events/{eventId}/status` | Event status |
-| `POST` | `/api/v1/inbound/cads` | CADS alias |
+| `POST` | `/api/v1/inbound/cads` | CADS alias (raw row or canonical JSON) |
+| `POST` | `/api/v1/inbound/cads/transform` | CADS dry-run transform (no persistence) |
 | `POST` | `/api/v1/inbound/peoplesoft` | PeopleSoft alias |
 | `POST` | `/api/v1/inbound/ecm` | ECM alias |
 | `POST` | `/api/v1/inbound/jspm` | JSPM alias |
@@ -180,7 +181,106 @@ For a full test script with step-by-step scenarios, see: [`docs/uat-script.md`](
 
 ---
 
-## MidPoint Preview Usage
+## CADS Row-to-Canonical Mapping
+
+CADS source data arrives as a spreadsheet table where each row represents one
+user's entitlements.  The backend includes a dedicated transformer that converts
+these raw rows into canonical MidPoint JSON before ingestion.
+
+### How it works
+
+1. **Dry-run / preview** — POST a raw CADS row to `POST /api/v1/inbound/cads/transform`
+   to preview the canonical payload without persisting anything.
+2. **Ingest** — POST the same row (or the canonical payload) directly to
+   `POST /api/v1/inbound/cads`.  The endpoint auto-detects raw rows (by looking for
+   column headers like `"User Email"`, `"Role"`, `"Valid From"`) and runs the
+   transformer automatically before ingestion.
+
+### Column mapping summary
+
+| CADS column | Canonical path | Transform |
+|---|---|---|
+| User Email | `identity.email` | Append `@ust.hk` if no `@` |
+| Role | `entitlement.roleName` | Trim |
+| Department / Project | `entitlement.departmentOrProject` | Trim |
+| (1) Enquire REQ/PO/Receipt | `attributes.permissions.enquireReqPoReceipt` | Y→true, else false |
+| (4) Certify Receipt Max. Amount | `attributes.limits.certifyReceiptForPaymentMaxAmountHkd` | Unlimited→null, else number |
+| Allow Further Delegation (proc.) | `attributes.delegation.procurement.allowFurtherDelegation` | Y→true |
+| (I)–(III) Enquire BR flags | `attributes.permissions.enquireBr*` | Y→true |
+| (A) Budget Commitment ALL | `attributes.permissions.approveEnquireBudgetCommitmentAllSystems` | Y→true |
+| Valid From | `entitlement.validFrom` | DD/MM/YYYY or YYYY-MM-DD → YYYY-MM-DD |
+| Valid To | `entitlement.validTo` | DD/MM/YYYY or YYYY-MM-DD → YYYY-MM-DD |
+
+### Sample dry-run request
+
+```bash
+curl -X POST http://localhost:4000/api/v1/inbound/cads/transform \
+  -H "api_key: poc-dev-key-1234" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "User Email": "user_a",
+    "Role": "BCO",
+    "Department / Project": "16500",
+    "(1)\nEnquire REQ/PO/\nReceipt ": "Y",
+    "(4)\nCertify Receipt for Payment Max. Amount (HKD)": "Unlimited",
+    "Allow Further Delegation ": "Y",
+    "(I)\nEnquire BR - General (FMS)": "Y",
+    "Valid From": "2025-01-07",
+    "Valid To": "31/12/2099"
+  }'
+```
+
+### Sample dry-run response
+
+```json
+{
+  "isValid": true,
+  "errors": [],
+  "payload": {
+    "meta": {
+      "eventId": "CADS-user_a_ust.hk-16500-2025-01-07",
+      "eventTime": "2025-01-07T00:00:00.000Z",
+      "sourceSystem": "CADS",
+      "correlationId": "",
+      "idempotencyKey": "CADS|user_a@ust.hk|16500|BCO|2025-01-07",
+      "operation": "ASSIGN_ENTITLEMENT"
+    },
+    "identity": { "email": "user_a@ust.hk" },
+    "entitlement": {
+      "roleName": "BCO",
+      "departmentOrProject": "16500",
+      "application": "FMS",
+      "validFrom": "2025-01-07",
+      "validTo": "2099-12-31"
+    },
+    "attributes": {
+      "permissions": { "enquireReqPoReceipt": true, "enquireBrGeneralFms": true },
+      "limits": { "certifyReceiptForPaymentMaxAmountHkd": null },
+      "delegation": { "procurement": { "allowFurtherDelegation": true }, "budget": {} }
+    }
+  }
+}
+```
+
+### Ingest raw CADS row directly
+
+```bash
+curl -X POST http://localhost:4000/api/v1/inbound/cads \
+  -H "api_key: poc-dev-key-1234" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "User Email": "user_a",
+    "Role": "BCO",
+    "Department / Project": "16500",
+    "Valid From": "2025-01-07",
+    "Valid To": "31/12/2099"
+  }'
+```
+
+The endpoint returns **422** with `{ error, errors }` if required fields
+(`User Email`, `Role`, `Department / Project`, `Valid From`, `Valid To`) are missing.
+
+---
 
 Use the new **MidPoint Preview** page at `http://localhost:3000/midpoint-preview` to:
 
@@ -308,6 +408,9 @@ iam-integration-poc/
 │           ├── midpointPreview.js# MidPoint preview transform + validation
 │           ├── syncStatus.js     # Sync status materialisation
 │           └── audit.js          # Audit log writer
+│       └── transformers/
+│           ├── cads.transformer.js          # CADS row → canonical MidPoint JSON
+│           └── cads.transformer.fixtures.js # Runnable examples / assertions
 │
 ├── frontend/
 │   ├── Dockerfile
