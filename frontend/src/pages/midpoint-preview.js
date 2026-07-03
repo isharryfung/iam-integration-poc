@@ -141,7 +141,7 @@ export default function MidpointPreviewPage() {
     try {
       await navigator.clipboard.writeText(transformedJson);
       setCopyMessage('Copied transformed JSON to clipboard.');
-    } catch (_error) {
+    } catch (_copyError) {
       setCopyMessage('Copy failed in this browser. Please copy manually from the panel.');
     }
   }

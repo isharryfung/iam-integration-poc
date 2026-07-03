@@ -65,7 +65,9 @@ function buildMidpointInput(event) {
   );
   const sourceAction = event.rawPayload && typeof event.rawPayload.action === 'string'
     ? event.rawPayload.action
-    : normalized.entitlement.action;
+    : event.entitlement && typeof event.entitlement.action === 'string'
+      ? event.entitlement.action
+      : normalized.entitlement.action;
 
   return compactObject({
     meta: {
@@ -84,7 +86,7 @@ function buildMidpointInput(event) {
       studentId: normalized.identity.studentId || null,
     },
     entitlement: {
-      application: normalized.entitlement.targetSystem || sourceSystem,
+      application: sourceSystem,
       action: normalized.entitlement.action || null,
       roleName: normalized.entitlement.role || null,
       department: normalized.entitlement.department || null,
@@ -138,10 +140,6 @@ function validateMidpointInput(midpointInput) {
   if (email) {
     const { valid, reason } = validateEmailDomain(email);
     if (!valid) addIssue('invalid', 'identity.email', reason);
-  }
-
-  if (application && sourceSystem && application !== sourceSystem) {
-    addIssue('invalid', 'entitlement.application', 'Application must match the originating source system for this preview');
   }
 
   if (sourceSystem === 'ECM' && !midpointInput.entitlement.documentClass) {

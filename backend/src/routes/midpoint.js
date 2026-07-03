@@ -8,7 +8,7 @@ const { buildPreviewResponse, MidpointTransformError } = require('../utils/midpo
 
 function handleTransformError(res, error) {
   if (error instanceof MidpointTransformError) {
-    return res.status(422).json({ error: 'Transform failed', detail: error.message });
+    return res.status(422).json({ error: 'MidPoint transformation failed', detail: error.message });
   }
   throw error;
 }
