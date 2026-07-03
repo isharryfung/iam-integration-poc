@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { apiFetch } from '../lib/api';
 
 // Sample payloads for each source system to help non-technical users
@@ -46,6 +46,9 @@ export default function TestIngest() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [mappedPreview, setMappedPreview] = useState(null);
+  const [mappedPreviewLoading, setMappedPreviewLoading] = useState(false);
+  const [mappedPreviewError, setMappedPreviewError] = useState('');
 
   function onSourceChange(src) {
     setSourceSystem(src);
@@ -53,6 +56,8 @@ export default function TestIngest() {
     setJsonError('');
     setResult(null);
     setError('');
+    setMappedPreview(null);
+    setMappedPreviewError('');
   }
 
   function validateJson(val) {
@@ -79,6 +84,46 @@ export default function TestIngest() {
     } finally {
       setLoading(false);
     }
+
+    useEffect(() => {
+      if (sourceSystem !== 'PEOPLESOFT') {
+        setMappedPreview(null);
+        setMappedPreviewLoading(false);
+        setMappedPreviewError('');
+        return;
+      }
+
+      let parsedPayload;
+      try {
+        parsedPayload = JSON.parse(payload);
+      } catch {
+        setMappedPreview(null);
+        setMappedPreviewLoading(false);
+        setMappedPreviewError('');
+        return;
+      }
+
+      const timer = setTimeout(async () => {
+        setMappedPreviewLoading(true);
+        setMappedPreviewError('');
+
+        try {
+          const data = await apiFetch('/api/v1/inbound/peoplesoft/preview', {
+            method: 'POST',
+            headers: { 'X-Source-System': 'PEOPLESOFT', 'Idempotency-Key': `ui-preview-${Date.now()}` },
+            body: JSON.stringify(parsedPayload),
+          });
+          setMappedPreview(data);
+        } catch (err) {
+          setMappedPreview(null);
+          setMappedPreviewError(err.error || err.message || 'Unable to generate People mapped payload preview');
+        } finally {
+          setMappedPreviewLoading(false);
+        }
+      }, 300);
+
+      return () => clearTimeout(timer);
+    }, [payload, sourceSystem]);
   }
 
   return (
@@ -147,6 +192,58 @@ export default function TestIngest() {
         >
           {loading ? 'Submitting…' : `Submit to ${sourceSystem}`}
         </button>
+
+        {sourceSystem === 'PEOPLESOFT' && (
+          <div style={{ marginTop: 14 }}>
+            <p style={{ marginBottom: 8, fontSize: 12, fontWeight: 600, color: '#334155' }}>
+              People mapped payload preview
+            </p>
+
+            {mappedPreviewLoading && (
+              <p style={{ margin: 0, color: '#64748b', fontSize: 12 }}>Generating preview…</p>
+            )}
+
+            {mappedPreviewError && (
+              <div style={{ background: '#fee2e2', color: '#991b1b', padding: 10, borderRadius: 8, fontSize: 12 }}>
+                ⚠️ {mappedPreviewError}
+              </div>
+            )}
+
+            {mappedPreview && (
+              <div
+                style={{
+                  marginTop: 8,
+                  border: '1px solid #bfdbfe',
+                  borderRadius: 8,
+                  background: '#eff6ff',
+                  padding: 12,
+                }}
+              >
+                <p style={{ marginTop: 0, marginBottom: 8, fontSize: 12, color: mappedPreview.isValid ? '#065f46' : '#92400e' }}>
+                  {mappedPreview.isValid ? '✅ Mapping validation passed' : '⚠️ Mapping validation issues found'}
+                </p>
+                {!mappedPreview.isValid && mappedPreview.errors.length > 0 && (
+                  <ul style={{ marginTop: 0, marginBottom: 10, paddingLeft: 18, fontSize: 12, color: '#92400e' }}>
+                    {mappedPreview.errors.map((item) => <li key={item}>{item}</li>)}
+                  </ul>
+                )}
+                <pre
+                  style={{
+                    margin: 0,
+                    background: '#0f172a',
+                    color: '#e2e8f0',
+                    borderRadius: 8,
+                    padding: 12,
+                    fontSize: 12,
+                    overflowX: 'auto',
+                  }}
+                >
+                  {JSON.stringify(mappedPreview.mappedPayload, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
+        )}
       </form>
 
       {error && (
