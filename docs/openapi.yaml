@@ -102,12 +102,14 @@ paths:
                   role: "READER"
                   action: "provision"
               jspm:
-                summary: JSPM project assignment
+                summary: JSPM raw CSV row (auto-transformed)
                 value:
-                  projectCode: "PROJ-2026-001"
-                  userEmail: "bob.lee@ust.hk"
-                  projectRole: "PROJECT_MANAGER"
-                  action: "assign"
+                  ROLE_GROUP_DESC: "Dept Salary Plan Owner"
+                  USER_NAM: "pmshr"
+                  ROLE_GROUP_ID_1: "2019120201000000000005"
+                  SETID_DEPT: "HKUST"
+                  DEPTID: "22000"
+                  ZR_TEAM_UNIT_CDE: ""
       responses:
         "202":
           description: Event accepted for processing
@@ -579,7 +581,12 @@ paths:
   /api/v1/inbound/jspm:
     post:
       summary: Ingest JSPM event (alias)
-      description: "Alias for `POST /api/v1/inbound/events` with `X-Source-System: JSPM`"
+      description: |
+        Alias for `POST /api/v1/inbound/events` with `X-Source-System: JSPM`.
+
+        Accepts either:
+        - A **raw JSPM CSV row** (keys: `ROLE_GROUP_DESC`, `USER_NAM`, `ROLE_GROUP_ID_1`, `DEPTID`, optionally `SETID_DEPT` and `ZR_TEAM_UNIT_CDE`). The backend auto-detects and transforms it via the JSPM transformer before ingestion.
+        - A **canonical JSON payload** (containing `meta`, `identity`, `entitlement`). Passed through unchanged.
       operationId: ingestJSPM
       tags: [Ingestion]
       parameters:
@@ -590,10 +597,97 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/IngestPayload'
+              oneOf:
+                - $ref: '#/components/schemas/JspmRawRow'
+                - $ref: '#/components/schemas/IngestPayload'
+            examples:
+              jspm_raw_row:
+                summary: Raw JSPM CSV row (auto-transformed)
+                value:
+                  ROLE_GROUP_DESC: "Dept Salary Plan Owner"
+                  USER_NAM: "pmshr"
+                  ROLE_GROUP_ID_1: "2019120201000000000005"
+                  SETID_DEPT: "HKUST"
+                  DEPTID: "22000"
+                  ZR_TEAM_UNIT_CDE: ""
+              jspm_canonical:
+                summary: Pre-built canonical JSPM payload
+                value:
+                  meta:
+                    eventId: "JSPM-2019120201000000000005-pmshr-2026-07-03T00:00:00Z"
+                    eventTime: "2026-07-03T00:00:00Z"
+                    sourceSystem: "JSPM"
+                    operation: "ASSIGN_ENTITLEMENT"
+                    idempotencyKey: "JSPM|2019120201000000000005|pmshr|22000"
+                  identity:
+                    externalUserId: "pmshr"
+                    email: "pmshr@ust.hk"
+                  entitlement:
+                    application: "JSPM"
+                    roleName: "Dept Salary Plan Owner"
+                    roleGroupId: "2019120201000000000005"
+                    departmentOrProject: "22000"
+                  attributes:
+                    setIdDept: "HKUST"
+                    deptId: "22000"
+                    teamUnitCode: null
       responses:
         "202":
           $ref: '#/components/responses/Accepted'
+        "422":
+          description: JSPM row failed transformation validation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:  { type: string }
+                  errors: { type: array, items: { type: string } }
+
+  /api/v1/inbound/jspm/preview:
+    post:
+      summary: Preview JSPM row → canonical mapping (dry-run)
+      description: |
+        Transforms a raw JSPM CSV row into canonical JSON without persisting anything.
+        Useful for previewing the mapping before ingestion.
+
+        Returns `{ isValid, errors, sourceRow, mappedPayload }`.
+      operationId: previewJSPM
+      tags: [Ingestion]
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JspmRawRow'
+            example:
+              ROLE_GROUP_DESC: "Dept Salary Plan Owner"
+              USER_NAM: "pmshr"
+              ROLE_GROUP_ID_1: "2019120201000000000005"
+              SETID_DEPT: "HKUST"
+              DEPTID: "22000"
+              ZR_TEAM_UNIT_CDE: ""
+      responses:
+        "200":
+          description: Transformation result (valid or with errors)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sourceSystem: { type: string, example: JSPM }
+                  isValid:      { type: boolean }
+                  errors:       { type: array, items: { type: string } }
+                  sourceRow:    { type: object, nullable: true }
+                  mappedPayload:
+                    $ref: '#/components/schemas/IngestPayload'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
 
   # ── User endpoints ──────────────────────────────────────────────────────────
   /api/v1/users/{email}/sync-status:
@@ -1341,6 +1435,48 @@ components:
               allowFurtherDelegation: true
             budget:
               allowFurtherDelegation: true
+
+    JspmRawRow:
+      type: object
+      description: |
+        Raw JSPM CSV row — keys match the column headers from `role_group_user_data.csv`.
+        The backend `/jspm` and `/jspm/preview` endpoints auto-detect this shape and run it
+        through the JSPM transformer before ingestion.
+      required: [ROLE_GROUP_DESC, USER_NAM, ROLE_GROUP_ID_1, DEPTID]
+      properties:
+        ROLE_GROUP_DESC:
+          type: string
+          description: Role group description → entitlement.roleName
+          example: "Dept Salary Plan Owner"
+        USER_NAM:
+          type: string
+          description: Username → identity.externalUserId (email is derived as USER_NAM@ust.hk)
+          example: "pmshr"
+        ROLE_GROUP_ID_1:
+          type: string
+          description: Role group identifier → entitlement.roleGroupId
+          example: "2019120201000000000005"
+        SETID_DEPT:
+          type: string
+          description: HR set-ID for the department → attributes.setIdDept
+          example: "HKUST"
+          nullable: true
+        DEPTID:
+          type: string
+          description: Department identifier → entitlement.departmentOrProject
+          example: "22000"
+        ZR_TEAM_UNIT_CDE:
+          type: string
+          description: Team unit code → attributes.teamUnitCode (optional)
+          example: ""
+          nullable: true
+      example:
+        ROLE_GROUP_DESC: "Dept Salary Plan Owner"
+        USER_NAM: "pmshr"
+        ROLE_GROUP_ID_1: "2019120201000000000005"
+        SETID_DEPT: "HKUST"
+        DEPTID: "22000"
+        ZR_TEAM_UNIT_CDE: ""
 
     EcmCombinedPayload:
       type: object

@@ -141,7 +141,8 @@ Default POC key: `poc-dev-key-1234`
 | `POST` | `/api/v1/inbound/peoplesoft/preview` | PeopleSoft mapped payload preview (no persistence) |
 | `POST` | `/api/v1/inbound/ecm` | ECM alias |
 | `POST` | `/api/v1/inbound/ecm/preview` | ECM combined payload preview (no persistence) |
-| `POST` | `/api/v1/inbound/jspm` | JSPM alias |
+| `POST` | `/api/v1/inbound/jspm` | JSPM alias (raw CSV row or canonical JSON) |
+| `POST` | `/api/v1/inbound/jspm/preview` | JSPM mapped payload preview (no persistence) |
 | `GET` | `/api/v1/midpoint/events` | Lightweight event list for preview search |
 | `GET` | `/api/v1/midpoint/preview?eventId={eventId}` | Preview MidPoint JSON by event ID |
 | `GET` | `/api/v1/midpoint/preview/by-email?email={email}&latest=true` | Preview latest (or selected) event by email |
@@ -271,6 +272,88 @@ curl -X POST http://localhost:4000/api/v1/inbound/ecm/preview \
 
 On the **Test Ingest** page, selecting **ECM** loads this combined input format and shows
 the live merged payload preview automatically.
+
+---
+
+## JSPM (Java Source Permission Management) Row Mapping
+
+JSPM access data comes from `role_group_user_data.csv`.  
+The `/jspm` and `/jspm/preview` endpoints accept either a **raw CSV row** (auto-detected and transformed) or a **pre-built canonical payload**.
+
+### Column mapping
+
+| CSV Column | Canonical path | Notes |
+|---|---|---|
+| `ROLE_GROUP_DESC` | `entitlement.roleName` | Role/group description |
+| `USER_NAM` | `identity.externalUserId` | Username; email derived as `USER_NAM@ust.hk` |
+| `ROLE_GROUP_ID_1` | `entitlement.roleGroupId` | Role group identifier |
+| `SETID_DEPT` | `attributes.setIdDept` | HR set-ID for the department |
+| `DEPTID` | `entitlement.departmentOrProject` | Department code |
+| `ZR_TEAM_UNIT_CDE` | `attributes.teamUnitCode` | Optional team unit code |
+
+### Example JSPM ingest request (raw CSV row)
+
+```bash
+curl -X POST http://localhost:4000/api/v1/inbound/jspm \
+  -H "api_key: poc-dev-key-1234" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: jspm-test-001" \
+  -d '{
+    "ROLE_GROUP_DESC":  "Dept Salary Plan Owner",
+    "USER_NAM":         "pmshr",
+    "ROLE_GROUP_ID_1":  "2019120201000000000005",
+    "SETID_DEPT":       "HKUST",
+    "DEPTID":           "22000",
+    "ZR_TEAM_UNIT_CDE": ""
+  }'
+```
+
+### Preview request (dry-run, no persistence)
+
+```bash
+curl -X POST http://localhost:4000/api/v1/inbound/jspm/preview \
+  -H "api_key: poc-dev-key-1234" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ROLE_GROUP_DESC":  "Dept Salary Plan Owner",
+    "USER_NAM":         "pmshr",
+    "ROLE_GROUP_ID_1":  "2019120201000000000005",
+    "SETID_DEPT":       "HKUST",
+    "DEPTID":           "22000",
+    "ZR_TEAM_UNIT_CDE": ""
+  }'
+```
+
+**Preview response:**
+
+```json
+{
+  "sourceSystem": "JSPM",
+  "isValid": true,
+  "errors": [],
+  "sourceRow": { "ROLE_GROUP_DESC": "Dept Salary Plan Owner", "USER_NAM": "pmshr", "ROLE_GROUP_ID_1": "2019120201000000000005", "SETID_DEPT": "HKUST", "DEPTID": "22000", "ZR_TEAM_UNIT_CDE": "" },
+  "mappedPayload": {
+    "meta": {
+      "eventId": "JSPM-2019120201000000000005-pmshr-<timestamp>",
+      "eventTime": "<timestamp>",
+      "sourceSystem": "JSPM",
+      "correlationId": null,
+      "idempotencyKey": "JSPM|2019120201000000000005|pmshr|22000",
+      "operation": "ASSIGN_ENTITLEMENT"
+    },
+    "identity": { "externalUserId": "pmshr", "email": "pmshr@ust.hk" },
+    "entitlement": {
+      "application": "JSPM",
+      "roleName": "Dept Salary Plan Owner",
+      "roleGroupId": "2019120201000000000005",
+      "departmentOrProject": "22000"
+    },
+    "attributes": { "setIdDept": "HKUST", "deptId": "22000", "teamUnitCode": null }
+  }
+}
+```
+
+On the **Test Ingest** page, selecting **JSPM** loads a pre-filled CSV row sample and shows the transformed canonical JSON in the preview panel below the form.
 
 ---
 

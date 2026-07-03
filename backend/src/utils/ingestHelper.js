@@ -164,23 +164,53 @@ function normalizePayload(raw, sourceSystem, correlationId, idempotencyKey) {
       transformed.errors
     );
   } else if (src === 'ECM') {
-    ecmUserId       = raw.userId || raw.ecmUserId;
-    ecmDocumentClass = raw.documentClass;
-    email           = raw.email || raw.userEmail;
-    displayName     = raw.displayName || raw.userName;
-    userType        = 'staff';
-    action          = raw.action || 'provision';
-    role            = raw.role || raw.accessLevel;
-    targetSystem    = 'ECM';
+    if (isCanonicalPayload(raw)) {
+      // Canonical ECM combined payload — map identity and entitlement directly
+      const identity = raw.identity || {};
+      const entitlement = raw.entitlement || {};
+      email        = identity.email;
+      displayName  = identity.externalUserId || identity.displayName;
+      userType     = 'staff';
+      action       = (raw.meta && raw.meta.operation) || 'provision';
+      role         = entitlement.roleName || entitlement.application || 'ECM';
+      department   = entitlement.departmentOrProject || entitlement.department;
+      targetSystem = 'ECM';
+      ecmUserId    = identity.externalUserId;
+    } else {
+      ecmUserId        = raw.userId || raw.ecmUserId;
+      ecmDocumentClass = raw.documentClass;
+      email            = raw.email || raw.userEmail;
+      displayName      = raw.displayName || raw.userName;
+      userType         = 'staff';
+      action           = raw.action || 'provision';
+      role             = raw.role || raw.accessLevel;
+      targetSystem     = 'ECM';
+    }
   } else if (src === 'JSPM') {
-    jspmProjectCode = raw.projectCode;
-    jspmRole        = raw.projectRole;
-    email           = raw.email || raw.userEmail;
-    displayName     = raw.displayName || raw.userName;
-    userType        = 'staff';
-    action          = raw.action || 'assign';
-    role            = raw.projectRole;
-    targetSystem    = 'JSPM';
+    if (isCanonicalPayload(raw)) {
+      // Canonical JSPM payload from transformJspmRow
+      const identity    = raw.identity || {};
+      const entitlement = raw.entitlement || {};
+      const attrs       = raw.attributes || {};
+      email           = identity.email;
+      displayName     = identity.externalUserId;
+      userType        = 'staff';
+      action          = (raw.meta && raw.meta.operation) || 'assign';
+      role            = entitlement.roleName;
+      department      = entitlement.departmentOrProject;
+      targetSystem    = 'JSPM';
+      jspmProjectCode = entitlement.roleGroupId;
+      jspmRole        = entitlement.roleName;
+    } else {
+      jspmProjectCode = raw.projectCode || raw.roleGroupId;
+      jspmRole        = raw.projectRole || raw.roleName;
+      email           = raw.email || raw.userEmail;
+      displayName     = raw.displayName || raw.userName;
+      userType        = 'staff';
+      action          = raw.action || 'assign';
+      role            = raw.projectRole || raw.roleName;
+      targetSystem    = 'JSPM';
+    }
   }
 
   // Normalise action enum
