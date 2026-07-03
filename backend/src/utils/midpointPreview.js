@@ -103,6 +103,10 @@ function buildMidpointInput(event) {
       documentClass: normalized.sourceData.ecmDocumentClass || null,
       projectCode: normalized.sourceData.jspmProjectCode || null,
     },
+    // Include CADS-specific permissions/limits when present
+    attributes: (sourceSystem === 'CADS' && normalized.sourceData.cadsAttributes)
+      ? normalized.sourceData.cadsAttributes
+      : undefined,
   });
 }
 
@@ -156,10 +160,6 @@ function validateMidpointInput(midpointInput) {
 
   if (sourceSystem === 'JSPM' && (!midpointInput.entitlement || !midpointInput.entitlement.projectCode)) {
     addIssue('missing', 'entitlement.projectCode', 'Project code is required for JSPM events');
-  }
-
-  if (sourceSystem === 'CADS' && (!midpointInput.identity || !midpointInput.identity.staffId)) {
-    addIssue('missing', 'identity.staffId', 'Staff ID is required for CADS events');
   }
 
   return {

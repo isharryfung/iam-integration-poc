@@ -199,7 +199,17 @@ paths:
   /api/v1/inbound/cads:
     post:
       summary: Ingest CADS event (alias)
-      description: Alias for `POST /api/v1/inbound/events` with `X-Source-System: CADS`
+      description: |
+        Alias for `POST /api/v1/inbound/events` with `X-Source-System: CADS`.
+
+        Accepts **two input formats**:
+        1. **Raw CADS table row** — object whose keys match CADS spreadsheet column headers
+           (e.g. `"User Email"`, `"Role"`, `"Valid From"`).  The backend automatically detects
+           this format and runs it through the CADS transformer before ingestion.
+        2. **Canonical JSON** — object with top-level `meta`, `identity`, and `entitlement`
+           keys (as returned by `POST /api/v1/inbound/cads/transform`).
+
+        Returns 422 if a raw row fails required-field validation.
       operationId: ingestCads
       tags: [Ingestion]
       parameters:
@@ -211,9 +221,130 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/IngestPayload'
+            examples:
+              cads_raw_row:
+                summary: Raw CADS table row
+                value:
+                  "User Email": "user_a"
+                  "Role": "BCO"
+                  "Department / Project": "16500"
+                  "(1)\nEnquire REQ/PO/\nReceipt ": "Y"
+                  "(2)\nRecord Receipt of Goods/\nServices": "Y"
+                  "(3)\nCertify Receipt for Payment": "Y"
+                  "(4)\nCertify Receipt for Payment Max. Amount (HKD)": "Unlimited"
+                  "Allow Further Delegation ": "Y"
+                  "(I)\nEnquire BR - General (FMS)": "Y"
+                  "(II)\nEnquire BR - Staffing related (HRMS)": "Y"
+                  "(III)\nEnquire BR - Student related (SIS)": "Y"
+                  "Allow Further Delegation": "Y"
+                  "(A)\nApprove / Enquire Budget Commitment in ALL Systems": "Y"
+                  "Approve Budget Commitment Max. Amount (HKD) in ALL Systems": "Unlimited"
+                  "Valid From": "2025-01-07"
+                  "Valid To": "31/12/2099"
+              cads_canonical:
+                summary: Canonical CADS payload
+                value:
+                  meta:
+                    eventId: "CADS-user_a_ust.hk-16500-2025-01-07"
+                    eventTime: "2025-01-07T00:00:00Z"
+                    sourceSystem: "CADS"
+                    correlationId: ""
+                    idempotencyKey: "CADS|user_a@ust.hk|16500|BCO|2025-01-07"
+                    operation: "ASSIGN_ENTITLEMENT"
+                  identity:
+                    email: "user_a@ust.hk"
+                  entitlement:
+                    roleName: "BCO"
+                    departmentOrProject: "16500"
+                    application: "SIS"
+                    validFrom: "2025-01-07"
+                    validTo: "2099-12-31"
+                  attributes:
+                    permissions:
+                      enquireReqPoReceipt: true
+                      recordReceiptGoodsServices: true
+                      certifyReceiptForPayment: true
+                      enquireBrGeneralFms: true
+                    limits:
+                      certifyReceiptForPaymentMaxAmountHkd: null
       responses:
         "202":
           $ref: '#/components/responses/Accepted'
+        "422":
+          description: CADS row failed transformation validation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:  { type: string }
+                  errors:
+                    type: array
+                    items: { type: string }
+
+  /api/v1/inbound/cads/transform:
+    post:
+      summary: Dry-run CADS row transformation
+      description: |
+        Transform a raw CADS table row into canonical MidPoint JSON **without persisting** it.
+        Use this endpoint to preview and validate the mapping before ingestion.
+
+        Returns `200` with `{ isValid, errors, payload }` when the row is valid.
+        Returns `422` when required fields are missing, with the partial payload included for debugging.
+      operationId: transformCadsRow
+      tags: [Ingestion]
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Raw CADS table row with column headers as keys
+              additionalProperties: true
+            examples:
+              cads_raw_row:
+                summary: Raw CADS table row
+                value:
+                  "User Email": "user_a"
+                  "Role": "BCO"
+                  "Department / Project": "16500"
+                  "(1)\nEnquire REQ/PO/\nReceipt ": "Y"
+                  "(4)\nCertify Receipt for Payment Max. Amount (HKD)": "Unlimited"
+                  "Allow Further Delegation ": "Y"
+                  "(I)\nEnquire BR - General (FMS)": "Y"
+                  "(III)\nEnquire BR - Student related (SIS)": "Y"
+                  "Valid From": "2025-01-07"
+                  "Valid To": "31/12/2099"
+      responses:
+        "200":
+          description: Transformation succeeded — canonical payload returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  isValid:  { type: boolean, example: true }
+                  errors:   { type: array, items: { type: string } }
+                  payload:
+                    $ref: '#/components/schemas/CadsCanonicalPayload'
+        "422":
+          description: Row failed required-field validation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:    { type: string }
+                  isValid:  { type: boolean, example: false }
+                  errors:   { type: array, items: { type: string } }
+                  payload:
+                    $ref: '#/components/schemas/CadsCanonicalPayload'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
 
   /api/v1/inbound/peoplesoft:
     post:
@@ -871,6 +1002,89 @@ components:
       properties:
         error:  { type: string }
         detail: { type: string }
+
+    CadsCanonicalPayload:
+      type: object
+      description: Canonical MidPoint JSON produced by the CADS transformer
+      properties:
+        meta:
+          type: object
+          properties:
+            eventId:        { type: string }
+            eventTime:      { type: string, format: date-time }
+            sourceSystem:   { type: string, example: CADS }
+            correlationId:  { type: string }
+            idempotencyKey: { type: string }
+            operation:      { type: string, example: ASSIGN_ENTITLEMENT }
+        identity:
+          type: object
+          properties:
+            email: { type: string, format: email }
+        entitlement:
+          type: object
+          properties:
+            roleName:             { type: string, example: BCO }
+            departmentOrProject:  { type: string, example: "16500" }
+            application:          { type: string, example: SIS }
+            validFrom:            { type: string, format: date, nullable: true }
+            validTo:              { type: string, format: date, nullable: true }
+        attributes:
+          type: object
+          properties:
+            permissions:
+              type: object
+              description: Boolean permission flags mapped from CADS Y/N columns
+              additionalProperties: { type: boolean }
+            limits:
+              type: object
+              description: Amount limits; null indicates Unlimited
+              additionalProperties:
+                type: number
+                nullable: true
+            delegation:
+              type: object
+              properties:
+                procurement:
+                  type: object
+                  properties:
+                    allowFurtherDelegation: { type: boolean }
+                budget:
+                  type: object
+                  properties:
+                    allowFurtherDelegation: { type: boolean }
+      example:
+        meta:
+          eventId: "CADS-user_a_ust.hk-16500-2025-01-07"
+          eventTime: "2025-01-07T00:00:00.000Z"
+          sourceSystem: "CADS"
+          correlationId: ""
+          idempotencyKey: "CADS|user_a@ust.hk|16500|BCO|2025-01-07"
+          operation: "ASSIGN_ENTITLEMENT"
+        identity:
+          email: "user_a@ust.hk"
+        entitlement:
+          roleName: "BCO"
+          departmentOrProject: "16500"
+          application: "SIS"
+          validFrom: "2025-01-07"
+          validTo: "2099-12-31"
+        attributes:
+          permissions:
+            enquireReqPoReceipt: true
+            recordReceiptGoodsServices: true
+            certifyReceiptForPayment: true
+            enquireBrGeneralFms: true
+            enquireBrStaffingHrms: true
+            enquireBrStudentSis: true
+            approveEnquireBudgetCommitmentAllSystems: true
+          limits:
+            certifyReceiptForPaymentMaxAmountHkd: null
+            approveBudgetCommitmentAllSystemsMaxAmountHkd: null
+          delegation:
+            procurement:
+              allowFurtherDelegation: true
+            budget:
+              allowFurtherDelegation: true
 
   responses:
     BadRequest:
