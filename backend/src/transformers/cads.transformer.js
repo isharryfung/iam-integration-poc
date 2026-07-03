@@ -128,7 +128,8 @@ function parseAmount(v) {
 
 /**
  * Normalise date strings to YYYY-MM-DD.
- * Accepts DD/MM/YYYY and YYYY-MM-DD; falls back to Date parsing.
+ * Accepts DD/MM/YYYY and YYYY-MM-DD; falls back to Date.UTC parsing.
+ * All parsing is done in UTC to avoid timezone-dependent date shifts.
  */
 function parseDateToYMD(v) {
   const s = String(v == null ? '' : v).trim();
@@ -144,8 +145,11 @@ function parseDateToYMD(v) {
     return `${yyyy}-${mm}-${dd}`;
   }
 
-  const d = new Date(s);
-  if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  // Fallback: parse as UTC to prevent timezone-dependent date shifts
+  const utcMs = Date.parse(s);
+  if (!Number.isNaN(utcMs)) {
+    return new Date(utcMs).toISOString().slice(0, 10);
+  }
   return null;
 }
 
@@ -164,10 +168,16 @@ function setDeep(obj, path, value) {
   const keys = path.split('.');
   let cur = obj;
   for (let i = 0; i < keys.length - 1; i++) {
-    if (!cur[keys[i]] || typeof cur[keys[i]] !== 'object') cur[keys[i]] = {};
-    cur = cur[keys[i]];
+    const key = keys[i];
+    // Guard against prototype pollution
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
+    if (!cur[key] || typeof cur[key] !== 'object') cur[key] = {};
+    cur = cur[key];
   }
-  cur[keys[keys.length - 1]] = value;
+  const lastKey = keys[keys.length - 1];
+  if (lastKey !== '__proto__' && lastKey !== 'constructor' && lastKey !== 'prototype') {
+    cur[lastKey] = value;
+  }
 }
 
 function transformValue(targetPath, raw) {

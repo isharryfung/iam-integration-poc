@@ -6,6 +6,16 @@ const { validateEmailDomain, extractDomain } = require('./emailValidation');
 const { refreshSyncStatus } = require('./syncStatus');
 
 /**
+ * Convert a date value (string or Date) to a Date object, falling back to
+ * a raw fallback value from the source payload. Returns undefined if absent.
+ */
+function toEntitlementDate(primary, fallback) {
+  if (primary) return new Date(primary);
+  if (fallback) return new Date(fallback);
+  return undefined;
+}
+
+/**
  * Map raw source payload into an InboundEvent document.
  * Handles CADS, PeopleSoft (SIS/FMS/HRMS), ECM, JSPM payloads.
  */
@@ -108,8 +118,8 @@ function normalizePayload(raw, sourceSystem, correlationId, idempotencyKey) {
       targetSystem,
       role,
       department,
-      validFrom:   validFrom   ? new Date(validFrom)   : (raw.validFrom  ? new Date(raw.validFrom)  : undefined),
-      validUntil:  validUntil  ? new Date(validUntil)  : (raw.validUntil ? new Date(raw.validUntil) : undefined),
+      validFrom:  toEntitlementDate(validFrom, raw.validFrom),
+      validUntil: toEntitlementDate(validUntil, raw.validUntil),
     },
     sourceData: {
       cadsEmployeeId, cadsOrgUnit,

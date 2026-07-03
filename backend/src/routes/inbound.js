@@ -247,14 +247,23 @@ function setSource(system) {
  * Detect whether a request body looks like a raw CADS table row
  * (has CADS-specific column headers) rather than a canonical JSON payload.
  * Canonical payloads have top-level `meta`, `identity`, or `entitlement` keys.
+ *
+ * Requires at least two of the four core CADS column markers to reduce
+ * false-positive risk from generic payloads that happen to contain one of them.
  */
 function isCadsRawRow(body) {
   if (!body || typeof body !== 'object') return false;
   if (body.meta || body.identity || body.entitlement) return false;
-  const keys = Object.keys(body);
-  return keys.some((k) =>
-    /User Email|Role|Department|Valid From|Valid To/i.test(k)
-  );
+  const cadsMarkers = [
+    'User Email',
+    'Role',
+    'Department / Project',
+    'Valid From',
+    'Valid To',
+  ];
+  const normalizedKeys = Object.keys(body).map((k) => String(k).trim());
+  const hits = cadsMarkers.filter((marker) => normalizedKeys.includes(marker));
+  return hits.length >= 2;
 }
 
 /**
@@ -276,7 +285,6 @@ async function handleCadsIngest(req, res) {
   if (isCadsRawRow(body)) {
     const transformed = transformCadsRow(body, {
       correlationId,
-      idempotencyKey: idempotencyKey || undefined,
     });
 
     if (!transformed.isValid) {
