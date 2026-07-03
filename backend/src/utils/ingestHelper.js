@@ -91,7 +91,7 @@ function normalizePeopleSoftCanonical(payload, correlationId, idempotencyKey, ra
     },
     rawPayload,
     status: 'received',
-    _transformErrors: transformErrors,
+    transformErrors,
   };
 }
 
@@ -197,7 +197,7 @@ function normalizePayload(raw, sourceSystem, correlationId, idempotencyKey) {
  * Validate a normalized event and return validation errors (if any).
  */
 function validateEvent(normalized) {
-  const errors = Array.isArray(normalized._transformErrors) ? [...normalized._transformErrors] : [];
+  const errors = Array.isArray(normalized.transformErrors) ? [...normalized.transformErrors] : [];
   if (normalized.sourceSystem === 'PEOPLESOFT') {
     if (!normalized.identity.email && !normalized.identity.displayName) {
       errors.push('Missing email or displayName in payload');
