@@ -65,7 +65,7 @@ test('normalizeAuditResource keeps strings unchanged and falls back to empty str
   assert.equal(normalizeAuditResource(undefined), '');
 });
 
-test('writeAudit persists object resource as a string and tolerates undefined fields', async () => {
+test('writeAudit persists object resource as a string', async () => {
   const created = [];
   const { writeAudit } = loadModuleWithMocks(auditModulePath, {
     '../models/AuditLog': {
@@ -79,13 +79,36 @@ test('writeAudit persists object resource as a string and tolerates undefined fi
   await writeAudit({
     correlationId: 'corr-audit-1',
     action: 'ingest_event',
-    resource: { type: 'inbound_event', id: 'evt-123', email: undefined },
+    resource: { type: 'inbound_event', id: 'evt-123', email: 'john.doe@ust.hk' },
     outcome: 'success',
     httpStatus: 202,
   });
 
   assert.equal(created.length, 1);
   assert.equal(typeof created[0].resource, 'string');
+  assert.equal(created[0].resource, '{"type":"inbound_event","id":"evt-123","email":"john.doe@ust.hk"}');
+});
+
+test('writeAudit converts undefined resource fields to null instead of crashing serialization', async () => {
+  const created = [];
+  const { writeAudit } = loadModuleWithMocks(auditModulePath, {
+    '../models/AuditLog': {
+      create: async (doc) => {
+        created.push(doc);
+        return doc;
+      },
+    },
+  });
+
+  await writeAudit({
+    correlationId: 'corr-audit-2',
+    action: 'ingest_event',
+    resource: { type: 'inbound_event', id: 'evt-123', email: undefined },
+    outcome: 'success',
+    httpStatus: 202,
+  });
+
+  assert.equal(created.length, 1);
   assert.equal(created[0].resource, '{"type":"inbound_event","id":"evt-123","email":null}');
 });
 
@@ -123,11 +146,18 @@ test('submit handlers stay successful when audit persistence fails for CADS, PEO
       entitlement: { application: 'TEST', roleName: 'User', departmentOrProject: 'ITS' },
     };
 
-    for (const routePath of ['/cads', '/peoplesoft', '/ecm', '/jspm']) {
+    const ingestRoutes = [
+      { routePath: '/cads', sourceSystem: 'CADS' },
+      { routePath: '/peoplesoft', sourceSystem: 'PEOPLESOFT' },
+      { routePath: '/ecm', sourceSystem: 'ECM' },
+      { routePath: '/jspm', sourceSystem: 'JSPM' },
+    ];
+
+    for (const { routePath, sourceSystem } of ingestRoutes) {
       const handler = getRouteHandler(router, routePath);
       const req = {
         body: canonicalBody,
-        headers: { 'x-source-system': routePath.slice(1).toUpperCase() },
+        headers: { 'x-source-system': sourceSystem },
         correlationId: `corr-${routePath.slice(1)}`,
         apiKeyId: 'dev-key',
       };
@@ -142,7 +172,8 @@ test('submit handlers stay successful when audit persistence fails for CADS, PEO
     }
 
     assert.equal(warnings.length, 4);
-    for (const [, context] of warnings) {
+    for (const [warningMessage, context] of warnings) {
+      assert.equal(warningMessage, 'Audit write failed');
       assert.equal(context.action, 'ingest_event');
       assert.equal(context.error, 'AuditLog validation failed');
       assert.equal(

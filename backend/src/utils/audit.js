@@ -14,7 +14,7 @@ function normalizeAuditResource(resource) {
       if (typeof value === 'bigint') return value.toString();
       return value;
     });
-    return typeof serialized === 'string' ? serialized : String(serialized);
+    return serialized;
   } catch (_err) {
     return '[unserializable resource]';
   }
