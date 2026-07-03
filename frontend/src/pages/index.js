@@ -68,6 +68,7 @@ export default function Dashboard() {
         {[
           { emoji: '📤', title: 'Test Ingest', desc: 'Submit a test event from CADS, PeopleSoft, ECM, or JSPM.', href: '/ingest' },
           { emoji: '🔍', title: 'Events Search', desc: 'Search all events for a user by email address.', href: '/events' },
+          { emoji: '🪞', title: 'MidPoint Preview', desc: 'Preview standardized MidPoint JSON from existing inbound events.', href: '/midpoint-preview' },
           { emoji: '🔄', title: 'Sync Status', desc: 'Check the current sync/provisioning status for any user.', href: '/sync-status' },
           { emoji: '🔑', title: 'Access Check', desc: 'Verify whether a user has access to a specific service.', href: '/access' },
         ].map(({ emoji, title, desc, href }) => (

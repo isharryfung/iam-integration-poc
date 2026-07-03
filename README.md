@@ -43,6 +43,7 @@ The platform ingests identity events from four upstream source systems — **CAD
                                  │  Pages:                │
                                  │  · Dashboard           │
                                  │  · Events Search       │
+                                 │  · MidPoint Preview    │
                                  │  · Test Ingest         │
                                  │  · Sync Status         │
                                  │  · Access Check        │
@@ -138,6 +139,9 @@ Default POC key: `poc-dev-key-1234`
 | `POST` | `/api/v1/inbound/peoplesoft` | PeopleSoft alias |
 | `POST` | `/api/v1/inbound/ecm` | ECM alias |
 | `POST` | `/api/v1/inbound/jspm` | JSPM alias |
+| `GET` | `/api/v1/midpoint/events` | Lightweight event list for preview search |
+| `GET` | `/api/v1/midpoint/preview?eventId={eventId}` | Preview MidPoint JSON by event ID |
+| `GET` | `/api/v1/midpoint/preview/by-email?email={email}&latest=true` | Preview latest (or selected) event by email |
 | `GET` | `/api/v1/users/{email}/sync-status` | User sync status |
 | `GET` | `/api/v1/users/{email}/events` | User event history |
 | `POST` | `/api/v1/users/{email}/replay` | Replay failed event |
@@ -166,9 +170,93 @@ curl -H "api_key: poc-dev-key-1234" \
 # 4. Check access
 curl -H "api_key: poc-dev-key-1234" -H "service_id: ECM" \
   "http://localhost:4000/user/access?email=john.doe@ust.hk"
+
+# 5. Preview the standardized MidPoint JSON for the latest event by email
+curl -H "api_key: poc-dev-key-1234" \
+  "http://localhost:4000/api/v1/midpoint/preview/by-email?email=john.doe@ust.hk&latest=true"
 ```
 
 For a full test script with step-by-step scenarios, see: [`docs/uat-script.md`](docs/uat-script.md)
+
+---
+
+## MidPoint Preview Usage
+
+Use the new **MidPoint Preview** page at `http://localhost:3000/midpoint-preview` to:
+
+- search existing inbound events by email, source system, or exact `eventId`
+- preview the original source payload and transformed MidPoint input JSON side by side
+- review validation results with missing/invalid field details
+- copy the transformed JSON to the clipboard
+
+### Example preview request
+
+```bash
+curl -H "api_key: poc-dev-key-1234" \
+  "http://localhost:4000/api/v1/midpoint/preview?eventId=REPLACE_WITH_EVENT_ID"
+```
+
+### Example preview response
+
+```json
+{
+  "eventId": "3e47bc6f-8f61-4e2d-b4f9-c2553f5a72bd",
+  "sourceSystem": "ECM",
+  "email": "alice.chan@ust.hk",
+  "status": "success",
+  "receivedAt": "2026-07-03T03:00:00.000Z",
+  "processedAt": "2026-07-03T03:00:00.100Z",
+  "transformStatus": "success",
+  "sourcePayload": {
+    "userId": "ECM-001",
+    "userEmail": "alice.chan@ust.hk",
+    "documentClass": "FINANCE_CONTRACTS",
+    "role": "READER",
+    "action": "provision"
+  },
+  "midpointInput": {
+    "meta": {
+      "eventId": "3e47bc6f-8f61-4e2d-b4f9-c2553f5a72bd",
+      "eventTime": "2026-07-03T03:00:00.000Z",
+      "sourceSystem": "ECM",
+      "correlationId": "3ca1f6a1-71df-4f29-a7f0-e420ab56b619",
+      "idempotencyKey": "ui-1720000000000",
+      "operation": "ASSIGN_ENTITLEMENT"
+    },
+    "identity": {
+      "email": "alice.chan@ust.hk",
+      "displayName": null,
+      "userType": "staff",
+      "staffId": null,
+      "studentId": null
+    },
+    "entitlement": {
+      "application": "ECM",
+      "action": "provision",
+      "roleName": "READER",
+      "department": null,
+      "validFrom": null,
+      "validUntil": null,
+      "documentClass": "FINANCE_CONTRACTS",
+      "projectCode": null
+    }
+  },
+  "validation": {
+    "isValid": true,
+    "status": "pass",
+    "missingFields": [],
+    "invalidFields": [],
+    "errors": []
+  }
+}
+```
+
+### Example event list request for the UI
+
+```bash
+curl -H "api_key: poc-dev-key-1234" \
+  "http://localhost:4000/api/v1/midpoint/events?email=john.doe@ust.hk&sourceSystem=CADS&limit=10"
+```
 
 ---
 
@@ -211,11 +299,13 @@ iam-integration-poc/
 │       │   └── SyncStatusByEmail.js
 │       ├── routes/
 │       │   ├── inbound.js        # /api/v1/inbound/* endpoints
+│       │   ├── midpoint.js       # /api/v1/midpoint/* preview endpoints
 │       │   ├── users.js          # /api/v1/users/* endpoints
 │       │   └── access.js         # /user/access endpoint
 │       └── utils/
 │           ├── emailValidation.js
 │           ├── ingestHelper.js   # Normalisation + ingestion logic
+│           ├── midpointPreview.js# MidPoint preview transform + validation
 │           ├── syncStatus.js     # Sync status materialisation
 │           └── audit.js          # Audit log writer
 │
@@ -231,6 +321,7 @@ iam-integration-poc/
 │       │   ├── _app.js           # Layout + navigation
 │       │   ├── index.js          # Dashboard
 │       │   ├── events.js         # Events Search
+│       │   ├── midpoint-preview.js # Source vs MidPoint JSON preview
 │       │   ├── ingest.js         # Test Ingest
 │       │   ├── sync-status.js    # Sync Status Viewer
 │       │   └── access.js         # Access Check

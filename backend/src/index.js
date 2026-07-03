@@ -4,6 +4,7 @@ const cors = require('cors');
 const mongoose = require('mongoose');
 
 const inboundRoutes = require('./routes/inbound');
+const midpointRoutes = require('./routes/midpoint');
 const userRoutes = require('./routes/users');
 const accessRoutes = require('./routes/access');
 const { apiKeyMiddleware } = require('./middleware/apiKey');
@@ -20,6 +21,7 @@ app.use(apiKeyMiddleware);         // validate api_key header (except health)
 // ── Routes ──────────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 app.use('/api/v1/inbound', inboundRoutes);
+app.use('/api/v1/midpoint', midpointRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use('/user', accessRoutes);
 
