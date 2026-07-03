@@ -17,7 +17,7 @@ version: '3.9'
 services:
   # ── MongoDB ───────────────────────────────────────────────────────────────
   mongo:
-    image: mongo:7.0
+    image: mongo:8.0
     container_name: iam_mongo
     restart: unless-stopped
     ports:
