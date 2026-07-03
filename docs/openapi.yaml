@@ -413,6 +413,169 @@ paths:
         "202":
           $ref: '#/components/responses/Accepted'
 
+  /api/v1/inbound/ecm/preview:
+    post:
+      summary: Preview ECM combined mapped payload
+      description: |
+        Merges two ECM source datasets into a single combined canonical payload per user
+        **without persisting** anything.
+
+        **Input format A — raw ECM rows (recommended for POC demo):**
+        ```json
+        {
+          "membershipRows": [
+            { "USERGROUPNAME": "AR_All_Docs", "USERNAME": "ARIVY" }
+          ],
+          "groupItemRows": [
+            { "USERGROUPNAME": "AR_All_Docs", "ITEMTYPENAME": "AR: Academic Transcript", "Dept": "ARO" }
+          ]
+        }
+        ```
+
+        **Input format B — pre-built ECM canonical payload:**
+        An object with `meta.sourceSystem = "ECM"` is passed through unchanged.
+
+        Returns one combined payload per unique `USERNAME`, each containing:
+        - `attributes.memberships[]` — group memberships for this user
+        - `attributes.groupEntitlements[]` — doc-type entitlements from all the user's groups
+        - `attributes.effectiveAccessSummary` — `{ totalGroups, totalDocTypes }`
+
+        Rows with missing required fields (`USERGROUPNAME`, `USERNAME` / `ITEMTYPENAME`) are skipped and
+        reported in `diagnostics`.
+      operationId: previewEcmCombined
+      tags: [Ingestion]
+      parameters:
+        - $ref: '#/components/parameters/ApiKey'
+        - $ref: '#/components/parameters/XCorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: |
+                Either an object with `membershipRows` + `groupItemRows` arrays, or a
+                pre-built ECM canonical payload (with `meta.sourceSystem = "ECM"`).
+              oneOf:
+                - type: object
+                  required: [membershipRows, groupItemRows]
+                  properties:
+                    membershipRows:
+                      type: array
+                      description: Raw ECM usergroup-user rows
+                      items:
+                        type: object
+                        properties:
+                          USERGROUPNAME: { type: string }
+                          USERNAME:      { type: string }
+                    groupItemRows:
+                      type: array
+                      description: Raw ECM usergroup-doctype rows
+                      items:
+                        type: object
+                        properties:
+                          USERGROUPNAME: { type: string }
+                          ITEMTYPENAME:  { type: string }
+                          Dept:          { type: string, nullable: true }
+                          Team:          { type: string, nullable: true }
+                          'Function/ Role?': { type: string, nullable: true }
+                - $ref: '#/components/schemas/EcmCombinedPayload'
+            examples:
+              ecm_preview_input:
+                summary: ECM combined preview input
+                value:
+                  membershipRows:
+                    - { USERGROUPNAME: "AR_All_Docs", USERNAME: "ARIVY" }
+                    - { USERGROUPNAME: "AR_RS_MGT",   USERNAME: "ARIVY" }
+                    - { USERGROUPNAME: "AR_All_Docs", USERNAME: "BWONG" }
+                  groupItemRows:
+                    - { USERGROUPNAME: "AR_All_Docs", ITEMTYPENAME: "AR: Academic Transcript",                  Dept: "ARO" }
+                    - { USERGROUPNAME: "AR_All_Docs", ITEMTYPENAME: "AR: Degree Diploma",                       Dept: "ARO" }
+                    - { USERGROUPNAME: "AR_RS_MGT",   ITEMTYPENAME: "AR: Special Student Document (Confidential)", Dept: "ARO" }
+      responses:
+        "200":
+          description: Combined ECM payloads generated (one per unique username)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sourceSystem: { type: string, example: ECM }
+                  isValid: { type: boolean }
+                  errors:
+                    type: array
+                    items: { type: string }
+                  combined:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        username: { type: string }
+                        isValid:  { type: boolean }
+                        errors:
+                          type: array
+                          items: { type: string }
+                        diagnostics:
+                          type: array
+                          items: { type: string }
+                        payload:
+                          $ref: '#/components/schemas/EcmCombinedPayload'
+              examples:
+                ecm_preview_response:
+                  summary: ECM combined preview response for ARIVY
+                  value:
+                    sourceSystem: ECM
+                    isValid: true
+                    errors: []
+                    combined:
+                      - username: ARIVY
+                        isValid: true
+                        errors: []
+                        diagnostics: []
+                        payload:
+                          meta:
+                            eventId: "ECM-COMBINED-ARIVY-2026-07-03T00:00:00.000Z"
+                            eventTime: "2026-07-03T00:00:00.000Z"
+                            sourceSystem: ECM
+                            correlationId: null
+                            idempotencyKey: "ECM|COMBINED|ARIVY"
+                            operation: UPSERT_USER_EFFECTIVE_ACCESS
+                          identity:
+                            externalUserId: ARIVY
+                            email: "arivy@ust.hk"
+                          entitlement:
+                            application: ECM
+                          attributes:
+                            memberships:
+                              - { groupName: AR_All_Docs }
+                              - { groupName: AR_RS_MGT }
+                            groupEntitlements:
+                              - groupName: AR_All_Docs
+                                resourceType: DOCUMENT_TYPE
+                                resourceName: "AR: Academic Transcript"
+                                dept: ARO
+                                team: null
+                                functionOrRole: null
+                              - groupName: AR_All_Docs
+                                resourceType: DOCUMENT_TYPE
+                                resourceName: "AR: Degree Diploma"
+                                dept: ARO
+                                team: null
+                                functionOrRole: null
+                              - groupName: AR_RS_MGT
+                                resourceType: DOCUMENT_TYPE
+                                resourceName: "AR: Special Student Document (Confidential)"
+                                dept: ARO
+                                team: null
+                                functionOrRole: null
+                            effectiveAccessSummary:
+                              totalGroups: 2
+                              totalDocTypes: 3
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
   /api/v1/inbound/jspm:
     post:
       summary: Ingest JSPM event (alias)
@@ -1178,6 +1341,92 @@ components:
               allowFurtherDelegation: true
             budget:
               allowFurtherDelegation: true
+
+    EcmCombinedPayload:
+      type: object
+      description: |
+        Combined ECM canonical payload produced by merging usergroup-user and
+        usergroup-doctype rows for a single user.
+        Operation: `UPSERT_USER_EFFECTIVE_ACCESS`
+      properties:
+        meta:
+          type: object
+          properties:
+            eventId:        { type: string, example: "ECM-COMBINED-ARIVY-2026-07-03T00:00:00.000Z" }
+            eventTime:      { type: string, format: date-time }
+            sourceSystem:   { type: string, example: ECM }
+            correlationId:  { type: string, nullable: true }
+            idempotencyKey: { type: string, example: "ECM|COMBINED|ARIVY" }
+            operation:      { type: string, example: UPSERT_USER_EFFECTIVE_ACCESS }
+        identity:
+          type: object
+          properties:
+            externalUserId: { type: string, example: ARIVY }
+            email:          { type: string, format: email, example: "arivy@ust.hk" }
+        entitlement:
+          type: object
+          properties:
+            application: { type: string, example: ECM }
+        attributes:
+          type: object
+          properties:
+            memberships:
+              type: array
+              description: Groups the user belongs to
+              items:
+                type: object
+                properties:
+                  groupName: { type: string }
+            groupEntitlements:
+              type: array
+              description: Document-type grants resolved for all the user's groups
+              items:
+                type: object
+                properties:
+                  groupName:      { type: string }
+                  resourceType:   { type: string, example: DOCUMENT_TYPE }
+                  resourceName:   { type: string }
+                  dept:           { type: string, nullable: true }
+                  team:           { type: string, nullable: true }
+                  functionOrRole: { type: string, nullable: true }
+            effectiveAccessSummary:
+              type: object
+              properties:
+                totalGroups:   { type: integer }
+                totalDocTypes: { type: integer }
+      example:
+        meta:
+          eventId: "ECM-COMBINED-ARIVY-2026-07-03T00:00:00.000Z"
+          eventTime: "2026-07-03T00:00:00.000Z"
+          sourceSystem: ECM
+          correlationId: null
+          idempotencyKey: "ECM|COMBINED|ARIVY"
+          operation: UPSERT_USER_EFFECTIVE_ACCESS
+        identity:
+          externalUserId: ARIVY
+          email: "arivy@ust.hk"
+        entitlement:
+          application: ECM
+        attributes:
+          memberships:
+            - { groupName: AR_All_Docs }
+            - { groupName: AR_RS_MGT }
+          groupEntitlements:
+            - groupName: AR_All_Docs
+              resourceType: DOCUMENT_TYPE
+              resourceName: "AR: Academic Transcript"
+              dept: ARO
+              team: null
+              functionOrRole: null
+            - groupName: AR_RS_MGT
+              resourceType: DOCUMENT_TYPE
+              resourceName: "AR: Special Student Document (Confidential)"
+              dept: ARO
+              team: null
+              functionOrRole: null
+          effectiveAccessSummary:
+            totalGroups: 2
+            totalDocTypes: 2
 
   responses:
     BadRequest:

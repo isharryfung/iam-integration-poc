@@ -138,7 +138,9 @@ Default POC key: `poc-dev-key-1234`
 | `POST` | `/api/v1/inbound/cads` | CADS alias (raw row or canonical JSON) |
 | `POST` | `/api/v1/inbound/cads/transform` | CADS dry-run transform (no persistence) |
 | `POST` | `/api/v1/inbound/peoplesoft` | PeopleSoft alias |
+| `POST` | `/api/v1/inbound/peoplesoft/preview` | PeopleSoft mapped payload preview (no persistence) |
 | `POST` | `/api/v1/inbound/ecm` | ECM alias |
+| `POST` | `/api/v1/inbound/ecm/preview` | ECM combined payload preview (no persistence) |
 | `POST` | `/api/v1/inbound/jspm` | JSPM alias |
 | `GET` | `/api/v1/midpoint/events` | Lightweight event list for preview search |
 | `GET` | `/api/v1/midpoint/preview?eventId={eventId}` | Preview MidPoint JSON by event ID |
@@ -178,6 +180,97 @@ curl -H "api_key: poc-dev-key-1234" \
 ```
 
 For a full test script with step-by-step scenarios, see: [`docs/uat-script.md`](docs/uat-script.md)
+
+---
+
+## ECM Combined Payload Mapping
+
+ECM access data comes from two separate source files that must be merged into a single
+canonical payload per user:
+
+| Source file | Purpose | Key columns |
+|---|---|---|
+| `usergroupnames` | Usergroup ↔ user membership | `USERGROUPNAME`, `USERNAME` |
+| `usergroup_items` | Usergroup ↔ document-type entitlement | `USERGROUPNAME`, `ITEMTYPENAME`, `Dept`, `Team`, `Function/ Role?` |
+
+The backend `/api/v1/inbound/ecm/preview` endpoint merges both files and returns
+**one combined canonical payload per unique `USERNAME`**.
+
+### Combined payload structure
+
+```json
+{
+  "meta": {
+    "sourceSystem": "ECM",
+    "operation": "UPSERT_USER_EFFECTIVE_ACCESS",
+    "idempotencyKey": "ECM|COMBINED|ARIVY"
+  },
+  "identity": {
+    "externalUserId": "ARIVY",
+    "email": "arivy@ust.hk"
+  },
+  "entitlement": {
+    "application": "ECM"
+  },
+  "attributes": {
+    "memberships": [
+      { "groupName": "AR_All_Docs" },
+      { "groupName": "AR_RS_MGT" }
+    ],
+    "groupEntitlements": [
+      {
+        "groupName": "AR_All_Docs",
+        "resourceType": "DOCUMENT_TYPE",
+        "resourceName": "AR: Academic Transcript",
+        "dept": "ARO",
+        "team": null,
+        "functionOrRole": null
+      },
+      {
+        "groupName": "AR_RS_MGT",
+        "resourceType": "DOCUMENT_TYPE",
+        "resourceName": "AR: Special Student Document (Confidential)",
+        "dept": "ARO",
+        "team": null,
+        "functionOrRole": null
+      }
+    ],
+    "effectiveAccessSummary": {
+      "totalGroups": 2,
+      "totalDocTypes": 2
+    }
+  }
+}
+```
+
+### Normalization rules
+
+- Rows with a blank `USERGROUPNAME`, `USERNAME`, or `ITEMTYPENAME` are silently skipped.
+- `USERNAME` is lowercased and a default domain (`@ust.hk`) is appended to form `email`.
+- `idempotencyKey` is generated as `ECM|COMBINED|<USERNAME>`.
+- `groupEntitlements` are resolved by joining each user's group memberships with the
+  group-item rows that share the same `USERGROUPNAME`.
+
+### Preview request
+
+```bash
+curl -X POST http://localhost:4000/api/v1/inbound/ecm/preview \
+  -H "api_key: poc-dev-key-1234" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "membershipRows": [
+      { "USERGROUPNAME": "AR_All_Docs", "USERNAME": "ARIVY" },
+      { "USERGROUPNAME": "AR_RS_MGT",   "USERNAME": "ARIVY" }
+    ],
+    "groupItemRows": [
+      { "USERGROUPNAME": "AR_All_Docs", "ITEMTYPENAME": "AR: Academic Transcript",                    "Dept": "ARO" },
+      { "USERGROUPNAME": "AR_RS_MGT",   "ITEMTYPENAME": "AR: Special Student Document (Confidential)", "Dept": "ARO" }
+    ]
+  }'
+```
+
+On the **Test Ingest** page, selecting **ECM** loads this combined input format and shows
+the live merged payload preview automatically.
 
 ---
 
@@ -456,7 +549,8 @@ iam-integration-poc/
 │           └── audit.js          # Audit log writer
 │       └── transformers/
 │           ├── cads.transformer.js          # CADS row → canonical MidPoint JSON
-│           └── cads.transformer.fixtures.js # Runnable examples / assertions
+│           ├── cads.transformer.fixtures.js # Runnable examples / assertions
+│           └── ecm.transformer.js           # ECM membership+doctype rows → combined payload
 │
 ├── frontend/
 │   ├── Dockerfile
