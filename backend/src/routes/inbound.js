@@ -5,7 +5,7 @@ const IngestionJob = require('../models/IngestionJob');
 const { ingestEvent } = require('../utils/ingestHelper');
 const { writeAudit } = require('../utils/audit');
 const { ingestLimiter, queryLimiter } = require('../middleware/rateLimiter');
-const { transformCadsRow } = require('../transformers/cads.transformer');
+const { transformCadsRow, cadsIdentifierKeys } = require('../transformers/cads.transformer');
 
 /**
  * POST /api/v1/inbound/events
@@ -248,21 +248,14 @@ function setSource(system) {
  * (has CADS-specific column headers) rather than a canonical JSON payload.
  * Canonical payloads have top-level `meta`, `identity`, or `entitlement` keys.
  *
- * Requires at least two of the four core CADS column markers to reduce
- * false-positive risk from generic payloads that happen to contain one of them.
+ * Requires at least two of the core CADS column markers (from cadsIdentifierKeys)
+ * to reduce false-positive risk from generic payloads.
  */
 function isCadsRawRow(body) {
   if (!body || typeof body !== 'object') return false;
   if (body.meta || body.identity || body.entitlement) return false;
-  const cadsMarkers = [
-    'User Email',
-    'Role',
-    'Department / Project',
-    'Valid From',
-    'Valid To',
-  ];
   const normalizedKeys = Object.keys(body).map((k) => String(k).trim());
-  const hits = cadsMarkers.filter((marker) => normalizedKeys.includes(marker));
+  const hits = cadsIdentifierKeys.filter((marker) => normalizedKeys.includes(marker));
   return hits.length >= 2;
 }
 
@@ -304,6 +297,8 @@ async function handleCadsIngest(req, res) {
     sourceSystem,
     correlationId,
     idempotencyKey,
+    // Store the original request body (raw row or canonical) for audit/replay traceability.
+    // The InboundEvent will store the canonical payload that was actually processed.
     rawPayload: req.body,
   });
 

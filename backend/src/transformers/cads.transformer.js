@@ -145,8 +145,12 @@ function parseDateToYMD(v) {
     return `${yyyy}-${mm}-${dd}`;
   }
 
-  // Fallback: parse as UTC to prevent timezone-dependent date shifts
-  const utcMs = Date.parse(s);
+  // Fallback: try to parse; if it looks like a bare date (no time component),
+  // append 'T00:00:00Z' to force UTC and avoid timezone-dependent date shifts.
+  const looksLikeBareDate = /^\d{4}[-/]\d{1,2}[-/]\d{1,2}$/.test(s) ||
+                            /^\d{1,2}[-/]\d{1,2}[-/]\d{4}$/.test(s);
+  const parseable = looksLikeBareDate ? s.replace(/\//g, '-') + 'T00:00:00Z' : s;
+  const utcMs = Date.parse(parseable);
   if (!Number.isNaN(utcMs)) {
     return new Date(utcMs).toISOString().slice(0, 10);
   }
@@ -316,6 +320,8 @@ function transformCadsRow(row, opts = {}) {
 
 module.exports = {
   columnMap,
+  /** Core CADS column header names used to identify raw CADS table rows. */
+  cadsIdentifierKeys: ['User Email', 'Role', 'Department / Project', 'Valid From', 'Valid To'],
   normalizeHeader,
   parseYN,
   parseAmount,
