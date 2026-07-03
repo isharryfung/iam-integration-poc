@@ -85,15 +85,14 @@ paths:
                   role: "APPROVER"
                   action: "provision"
               peoplesoft_hrms:
-                summary: PeopleSoft HRMS event
+                summary: PeopleSoft table-row event
                 value:
-                  module: "HRMS"
-                  emplid: "P98765"
-                  email: "jane.smith@ust.hk"
-                  name: "Jane Smith"
-                  jobCode: "IT_ANALYST"
-                  department: "Information Technology"
-                  action: "update"
+                  "Dept": "DAO"
+                  "Rank/ Team": "Alumni Team"
+                  "User": "dao.alumni.manager"
+                  "Role Name": "HKUST ALUM ADMIN DOWNLOAD DATA"
+                  "Remarks": "Access to AAS"
+                  "Data Level Security": "All alumni"
               ecm:
                 summary: ECM access event
                 value:
@@ -349,7 +348,7 @@ paths:
   /api/v1/inbound/peoplesoft:
     post:
       summary: Ingest PeopleSoft event (alias)
-      description: Alias for `POST /api/v1/inbound/events` with `X-Source-System: PEOPLESOFT`
+      description: "Alias for `POST /api/v1/inbound/events` with `X-Source-System: PEOPLESOFT`"
       operationId: ingestPeopleSoft
       tags: [Ingestion]
       parameters:
@@ -361,6 +360,36 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/IngestPayload'
+            examples:
+              peoplesoft_row:
+                summary: Raw PeopleSoft export row
+                value:
+                  "Dept": "ARO"
+                  "Rank/ Team": "Prog Reg Team"
+                  "User": "ar.registrar"
+                  "Role Name": "HKUST STU SERVICE CENTER"
+                  "Remarks": "Access to SIS"
+                  "Data Level Security": "All students"
+              peoplesoft_canonical:
+                summary: Canonical PeopleSoft payload
+                value:
+                  meta:
+                    sourceSystem: "PEOPLESOFT"
+                    operation: "ASSIGN_ENTITLEMENT"
+                  identity:
+                    email: "ar.registrar@ust.hk"
+                    userType: "staff"
+                  entitlement:
+                    application: "SIS"
+                    action: "provision"
+                    roleName: "HKUST STU SERVICE CENTER"
+                    departmentOrProject: "ARO"
+                  attributes:
+                    rankOrTeam: "Prog Reg Team"
+                    remarks: "Access to SIS"
+                    dataLevelSecurity:
+                      scope: "ALL_STUDENTS"
+                      label: "All students"
       responses:
         "202":
           $ref: '#/components/responses/Accepted'
@@ -368,7 +397,7 @@ paths:
   /api/v1/inbound/ecm:
     post:
       summary: Ingest ECM event (alias)
-      description: Alias for `POST /api/v1/inbound/events` with `X-Source-System: ECM`
+      description: "Alias for `POST /api/v1/inbound/events` with `X-Source-System: ECM`"
       operationId: ingestECM
       tags: [Ingestion]
       parameters:
@@ -387,7 +416,7 @@ paths:
   /api/v1/inbound/jspm:
     post:
       summary: Ingest JSPM event (alias)
-      description: Alias for `POST /api/v1/inbound/events` with `X-Source-System: JSPM`
+      description: "Alias for `POST /api/v1/inbound/events` with `X-Source-System: JSPM`"
       operationId: ingestJSPM
       tags: [Ingestion]
       parameters:
@@ -584,6 +613,58 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MidpointPreviewResponse'
+              examples:
+                peoplesoft:
+                  summary: PeopleSoft source row and transformed canonical JSON
+                  value:
+                    eventId: "ps-7fbdd1fb-df5d-4db2-b447-b6579400dc32"
+                    sourceSystem: "PEOPLESOFT"
+                    email: "dao.alumni.manager@ust.hk"
+                    status: "success"
+                    receivedAt: "2026-07-03T03:00:00.000Z"
+                    processedAt: "2026-07-03T03:00:00.100Z"
+                    transformStatus: "success"
+                    sourcePayload:
+                      "Dept": "DAO"
+                      "Rank/ Team": "Alumni Team"
+                      "User": "dao.alumni.manager"
+                      "Role Name": "HKUST ALUM ADMIN DOWNLOAD DATA"
+                      "Remarks": "Access to AAS"
+                      "Data Level Security": "All alumni"
+                    midpointInput:
+                      meta:
+                        eventId: "ps-7fbdd1fb-df5d-4db2-b447-b6579400dc32"
+                        eventTime: "2026-07-03T03:00:00.000Z"
+                        sourceSystem: "PEOPLESOFT"
+                        correlationId: "3ca1f6a1-71df-4f29-a7f0-e420ab56b619"
+                        idempotencyKey: "peoplesoft|dao.alumni.manager@ust.hk|DAO|HKUST ALUM ADMIN DOWNLOAD DATA"
+                        operation: "ASSIGN_ENTITLEMENT"
+                      identity:
+                        email: "dao.alumni.manager@ust.hk"
+                        displayName: null
+                        userType: "staff"
+                        staffId: null
+                        studentId: null
+                      entitlement:
+                        application: "AAS"
+                        action: "provision"
+                        roleName: "HKUST ALUM ADMIN DOWNLOAD DATA"
+                        departmentOrProject: "DAO"
+                        department: "DAO"
+                        validFrom: null
+                        validUntil: null
+                      attributes:
+                        rankOrTeam: "Alumni Team"
+                        remarks: "Access to AAS"
+                        dataLevelSecurity:
+                          scope: "ALL_ALUMNI"
+                          label: "All alumni"
+                    validation:
+                      isValid: true
+                      status: "pass"
+                      missingFields: []
+                      invalidFields: []
+                      errors: []
         "400":
           $ref: '#/components/responses/BadRequest'
         "401":
@@ -935,11 +1016,21 @@ components:
         application:   { type: string }
         action:        { type: string, nullable: true }
         roleName:      { type: string, nullable: true }
+        departmentOrProject: { type: string, nullable: true }
         department:    { type: string, nullable: true }
         validFrom:     { type: string, format: date-time, nullable: true }
         validUntil:    { type: string, format: date-time, nullable: true }
         documentClass: { type: string, nullable: true }
         projectCode:   { type: string, nullable: true }
+
+    MidpointAttributes:
+      type: object
+      properties:
+        rankOrTeam: { type: string, nullable: true }
+        remarks: { type: string, nullable: true }
+        dataLevelSecurity:
+          type: object
+          additionalProperties: true
 
     MidpointInput:
       type: object
@@ -950,6 +1041,8 @@ components:
           $ref: '#/components/schemas/MidpointIdentity'
         entitlement:
           $ref: '#/components/schemas/MidpointEntitlement'
+        attributes:
+          $ref: '#/components/schemas/MidpointAttributes'
 
     MidpointPreviewResponse:
       type: object

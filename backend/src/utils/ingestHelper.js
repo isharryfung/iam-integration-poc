@@ -4,6 +4,96 @@ const IngestionJob = require('../models/IngestionJob');
 const IdentityLink = require('../models/IdentityLink');
 const { validateEmailDomain, extractDomain } = require('./emailValidation');
 const { refreshSyncStatus } = require('./syncStatus');
+const { transformPeoplesoftRow } = require('../transformers/peoplesoft.transformer');
+
+function parseDateValue(value) {
+  if (!value) return undefined;
+  const parsed = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+function normalizeString(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function mapMidpointOperationToAction(operation) {
+  const normalized = normalizeString(operation).toUpperCase();
+  if (normalized === 'REMOVE_ENTITLEMENT') return 'deprovision';
+  if (normalized === 'ASSIGN_ENTITLEMENT') return 'provision';
+  if (normalized === 'CREATE_OR_UPDATE_IDENTITY') return 'update';
+  if (normalized === 'SYNC_PROJECT_MEMBERSHIP') return 'sync';
+  return 'sync';
+}
+
+function isCanonicalPayload(raw) {
+  return Boolean(raw && typeof raw === 'object' && raw.meta && raw.identity && raw.entitlement);
+}
+
+function toPeopleSoftModule(value) {
+  const normalized = normalizeString(value).toUpperCase();
+  return ['SIS', 'FMS', 'HRMS'].includes(normalized) ? normalized : 'UNKNOWN';
+}
+
+function buildPeopleSoftIdempotencyKey(identity, department, role) {
+  const principal = normalizeString(identity.email || identity.displayName) || 'unknown-user';
+  const scope = normalizeString(department) || 'unknown-department';
+  const roleName = normalizeString(role) || 'unknown-role';
+  return `peoplesoft|${principal}|${scope}|${roleName}`;
+}
+
+function normalizePeopleSoftCanonical(payload, correlationId, idempotencyKey, rawPayload, transformErrors = []) {
+  const meta = payload.meta || {};
+  const identity = payload.identity || {};
+  const entitlement = payload.entitlement || {};
+  const email = normalizeString(identity.email).toLowerCase();
+  const displayName = normalizeString(identity.displayName) || undefined;
+  const staffId = normalizeString(identity.staffId) || undefined;
+  const studentId = normalizeString(identity.studentId) || undefined;
+  const userType = normalizeString(identity.userType) || 'staff';
+  const targetSystem = normalizeString(entitlement.application) || 'PEOPLESOFT';
+  const department = normalizeString(entitlement.departmentOrProject || entitlement.department) || undefined;
+  const role = normalizeString(entitlement.roleName) || undefined;
+  const moduleFromSource = payload.sourceData && payload.sourceData.psModule;
+  const moduleFromApplication = targetSystem;
+
+  return {
+    eventId: normalizeString(meta.eventId) || uuidv4(),
+    sourceSystem: 'PEOPLESOFT',
+    correlationId: normalizeString(meta.correlationId) || correlationId,
+    idempotencyKey:
+      normalizeString(meta.idempotencyKey) ||
+      idempotencyKey ||
+      buildPeopleSoftIdempotencyKey(identity, department, role),
+    identity: {
+      email: email || undefined,
+      emailDomain: email ? extractDomain(email) || undefined : undefined,
+      staffId,
+      studentId,
+      displayName,
+      userType,
+    },
+    entitlement: {
+      action: normalizeString(entitlement.action) || mapMidpointOperationToAction(meta.operation),
+      targetSystem,
+      role,
+      department,
+      validFrom: parseDateValue(entitlement.validFrom),
+      validUntil: parseDateValue(entitlement.validUntil),
+    },
+    sourceData: {
+      psModule: toPeopleSoftModule(moduleFromSource || moduleFromApplication),
+      psRecordType: payload.sourceData && payload.sourceData.psRecordType,
+      psEmplid:
+        (payload.sourceData && payload.sourceData.psEmplid) ||
+        staffId ||
+        studentId ||
+        undefined,
+    },
+    rawPayload,
+    status: 'received',
+    transformErrors,
+  };
+}
 
 /**
  * Convert a date value (string or Date) to a Date object, falling back to
@@ -61,19 +151,18 @@ function normalizePayload(raw, sourceSystem, correlationId, idempotencyKey) {
       targetSystem   = 'CADS';
     }
   } else if (src === 'PEOPLESOFT') {
-    // PeopleSoft can be SIS (student), FMS (finance), HRMS (HR)
-    psModule    = (raw.module || raw.psModule || 'UNKNOWN').toUpperCase();
-    psRecordType = raw.recordType;
-    psEmplid    = raw.emplid || raw.employeeId;
-    email       = raw.email || raw.emailAddress;
-    displayName = raw.name || raw.displayName;
-    staffId     = ['FMS', 'HRMS'].includes(psModule) ? psEmplid : undefined;
-    studentId   = psModule === 'SIS' ? raw.studentId || psEmplid : undefined;
-    userType    = psModule === 'SIS' ? 'student' : 'staff';
-    action      = raw.action || 'sync';
-    role        = raw.role || raw.jobCode;
-    department  = raw.department || raw.deptId;
-    targetSystem = 'PEOPLESOFT';
+    if (isCanonicalPayload(raw)) {
+      return normalizePeopleSoftCanonical(raw, correlationId, idempotencyKey, raw);
+    }
+
+    const transformed = transformPeoplesoftRow(raw, { correlationId, idempotencyKey });
+    return normalizePeopleSoftCanonical(
+      transformed.payload,
+      correlationId,
+      idempotencyKey || transformed.payload.meta.idempotencyKey,
+      raw,
+      transformed.errors
+    );
   } else if (src === 'ECM') {
     ecmUserId       = raw.userId || raw.ecmUserId;
     ecmDocumentClass = raw.documentClass;
@@ -137,14 +226,28 @@ function normalizePayload(raw, sourceSystem, correlationId, idempotencyKey) {
  * Validate a normalized event and return validation errors (if any).
  */
 function validateEvent(normalized) {
+  const transformErrors = Array.isArray(normalized.transformErrors) ? normalized.transformErrors : [];
   const errors = [];
-  if (!normalized.identity.email) {
-    errors.push('Missing email in payload');
-  } else {
-    const { valid, reason } = validateEmailDomain(normalized.identity.email);
-    if (!valid) errors.push(reason);
+
+  function addError(message) {
+    if (message && !errors.includes(message)) errors.push(message);
   }
-  if (!normalized.sourceSystem) errors.push('Missing sourceSystem');
+
+  transformErrors.forEach(addError);
+
+  if (normalized.sourceSystem === 'PEOPLESOFT') {
+    if (!normalized.identity.email && !normalized.identity.displayName) {
+      addError('Missing email or displayName in payload');
+    }
+  } else if (!normalized.identity.email) {
+    addError('Missing email in payload');
+  }
+
+  if (normalized.identity.email) {
+    const { valid, reason } = validateEmailDomain(normalized.identity.email);
+    if (!valid) addError(reason);
+  }
+  if (!normalized.sourceSystem) addError('Missing sourceSystem');
   return errors;
 }
 

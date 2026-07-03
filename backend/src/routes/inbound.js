@@ -3,6 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 const InboundEvent = require('../models/InboundEvent');
 const IngestionJob = require('../models/IngestionJob');
 const { ingestEvent } = require('../utils/ingestHelper');
+const { transformPeoplesoftRow } = require('../transformers/peoplesoft.transformer');
 const { writeAudit } = require('../utils/audit');
 const { ingestLimiter, queryLimiter } = require('../middleware/rateLimiter');
 const { transformCadsRow, cadsIdentifierKeys } = require('../transformers/cads.transformer');
@@ -196,6 +197,25 @@ router.get('/events/:eventId/status', queryLimiter, async (req, res) => {
     lastError: event.lastError,
     receivedAt: event.createdAt,
     processedAt: event.processedAt,
+  });
+});
+
+/**
+ * POST /api/v1/inbound/peoplesoft/preview
+ * Returns transformed canonical payload preview without ingesting.
+ */
+router.post('/peoplesoft/preview', queryLimiter, async (req, res) => {
+  const idempotencyKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'];
+  const transformed = transformPeoplesoftRow(req.body || {}, {
+    correlationId: req.correlationId,
+    idempotencyKey,
+  });
+
+  return res.json({
+    sourceSystem: 'PEOPLESOFT',
+    isValid: transformed.isValid,
+    errors: transformed.errors,
+    mappedPayload: transformed.payload,
   });
 });
 

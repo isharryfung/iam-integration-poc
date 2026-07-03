@@ -1,5 +1,6 @@
 const { normalizePayload } = require('./ingestHelper');
 const { validateEmailDomain } = require('./emailValidation');
+const { transformPeoplesoftRow } = require('../transformers/peoplesoft.transformer');
 
 const SUPPORTED_SOURCE_SYSTEMS = ['CADS', 'PEOPLESOFT', 'ECM', 'JSPM'];
 const VALID_OPERATIONS = [
@@ -59,6 +60,30 @@ function resolveSourceAction(event, normalized) {
   return normalized.entitlement.action;
 }
 
+function isCanonicalPayload(payload) {
+  return Boolean(payload && typeof payload === 'object' && payload.meta && payload.identity && payload.entitlement);
+}
+
+function normalizePeopleSoftPreviewPayload(event) {
+  if (isCanonicalPayload(event.rawPayload)) {
+    return event.rawPayload;
+  }
+
+  return transformPeoplesoftRow(event.rawPayload, {
+    correlationId: event.correlationId,
+    idempotencyKey: event.idempotencyKey,
+    eventId: event.eventId,
+    eventTime: toIsoString(event.createdAt),
+  }).payload;
+}
+
+function isMissingRequiredIdentity(sourceSystem, email, displayName) {
+  if (sourceSystem === 'PEOPLESOFT') {
+    return !email && !displayName;
+  }
+  return !email;
+}
+
 function buildMidpointInput(event) {
   if (!event || !event.rawPayload || !event.sourceSystem) {
     throw new MidpointTransformError('Event is missing source payload or source system');
@@ -67,6 +92,40 @@ function buildMidpointInput(event) {
   const sourceSystem = String(event.sourceSystem).toUpperCase();
   if (!SUPPORTED_SOURCE_SYSTEMS.includes(sourceSystem)) {
     throw new MidpointTransformError(`Unsupported source system '${sourceSystem}'`);
+  }
+
+  if (sourceSystem === 'PEOPLESOFT') {
+    const transformed = normalizePeopleSoftPreviewPayload(event);
+    const identity = transformed.identity || {};
+    const entitlement = transformed.entitlement || {};
+
+    return compactObject({
+      meta: {
+        eventId: event.eventId || transformed.meta.eventId || null,
+        eventTime: toIsoString(event.createdAt) || transformed.meta.eventTime || null,
+        sourceSystem,
+        correlationId: event.correlationId || transformed.meta.correlationId || null,
+        idempotencyKey: event.idempotencyKey || transformed.meta.idempotencyKey || null,
+        operation: transformed.meta.operation || 'ASSIGN_ENTITLEMENT',
+      },
+      identity: {
+        email: identity.email || null,
+        displayName: identity.displayName || null,
+        userType: identity.userType || 'staff',
+        staffId: identity.staffId || null,
+        studentId: identity.studentId || null,
+      },
+      entitlement: {
+        application: entitlement.application || 'PEOPLESOFT',
+        action: entitlement.action || null,
+        roleName: entitlement.roleName || null,
+        departmentOrProject: entitlement.departmentOrProject || entitlement.department || null,
+        department: entitlement.department || entitlement.departmentOrProject || null,
+        validFrom: toIsoString(entitlement.validFrom),
+        validUntil: toIsoString(entitlement.validUntil),
+      },
+      attributes: transformed.attributes || {},
+    });
   }
 
   const normalized = normalizePayload(
@@ -133,9 +192,23 @@ function validateMidpointInput(midpointInput) {
   const eventTime = requireValue(midpointInput.meta && midpointInput.meta.eventTime, 'meta.eventTime', 'Event time');
   const sourceSystem = requireValue(midpointInput.meta && midpointInput.meta.sourceSystem, 'meta.sourceSystem', 'Source system');
   const operation = requireValue(midpointInput.meta && midpointInput.meta.operation, 'meta.operation', 'MidPoint operation');
-  const email = requireValue(midpointInput.identity && midpointInput.identity.email, 'identity.email', 'Identity email');
+  const email = midpointInput.identity && typeof midpointInput.identity.email === 'string'
+    ? midpointInput.identity.email.trim()
+    : '';
+  const displayName = midpointInput.identity && typeof midpointInput.identity.displayName === 'string'
+    ? midpointInput.identity.displayName.trim()
+    : '';
   const application = requireValue(midpointInput.entitlement && midpointInput.entitlement.application, 'entitlement.application', 'Target application');
   const roleName = requireValue(midpointInput.entitlement && midpointInput.entitlement.roleName, 'entitlement.roleName', 'Role name');
+  if (isMissingRequiredIdentity(sourceSystem, email, displayName)) {
+    addIssue(
+      'missing',
+      'identity.email',
+      sourceSystem === 'PEOPLESOFT'
+        ? 'Identity email or displayName is required for PeopleSoft events'
+        : 'Identity email is required'
+    );
+  }
 
   if (eventTime && Number.isNaN(new Date(eventTime).getTime())) {
     addIssue('invalid', 'meta.eventTime', 'Event time must be a valid ISO timestamp');
@@ -173,6 +246,7 @@ function validateMidpointInput(midpointInput) {
 
 function buildPreviewResponse(event) {
   const midpointInput = buildMidpointInput(event);
+  const validation = validateMidpointInput(midpointInput);
   return {
     eventId: event.eventId,
     sourceSystem: event.sourceSystem,
@@ -180,10 +254,10 @@ function buildPreviewResponse(event) {
     status: event.status,
     receivedAt: toIsoString(event.createdAt),
     processedAt: toIsoString(event.processedAt),
-    transformStatus: 'success',
+    transformStatus: validation.isValid ? 'success' : 'validation_failed',
     sourcePayload: event.rawPayload,
     midpointInput,
-    validation: validateMidpointInput(midpointInput),
+    validation,
   };
 }
 
