@@ -1,17 +1,26 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../lib/api';
 
 // Sample payloads for each source system to help non-technical users
 const SAMPLE_PAYLOADS = {
+  // Raw CADS table-row format — keys match the actual CADS column headers used
+  // by the transformer. The backend /cads/transform endpoint maps this into
+  // a canonical MidPoint JSON payload (shown in the preview panel below).
   CADS: {
-    employeeId: 'E12345',
-    employeeEmail: 'john.doe@ust.hk',
-    employeeName: 'John Doe',
-    department: 'Finance Management Office',
-    orgUnit: 'FMO',
-    jobTitle: 'Finance Officer',
-    role: 'APPROVER',
-    action: 'provision',
+    'User Email': 'john.doe@ust.hk',
+    'Role': 'BCO',
+    'Department / Project': 'Finance Management Office',
+    '(1)\nEnquire REQ/PO/\nReceipt ': 'Y',
+    '(2)\nRecord Receipt of Goods/\nServices': 'Y',
+    '(3)\nCertify Receipt for Payment': 'Y',
+    '(4)\nCertify Receipt for Payment Max. Amount (HKD)': 'Unlimited',
+    'Allow Further Delegation ': 'Y',
+    '(I)\nEnquire BR - General (FMS)': 'Y',
+    '(II)\nEnquire BR - Staffing related (HRMS)': 'N',
+    '(III)\nEnquire BR - Student related (SIS)': 'N',
+    'Allow Further Delegation': 'N',
+    'Valid From': '2025-01-07',
+    'Valid To': '31/12/2099',
   },
   PEOPLESOFT: {
     module: 'HRMS',
@@ -47,6 +56,39 @@ export default function TestIngest() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [mappedPayload, setMappedPayload] = useState(null);
+  const [mappingErrors, setMappingErrors] = useState([]);
+  const [mappingLoading, setMappingLoading] = useState(false);
+  const debounceRef = useRef(null);
+
+  // Fetch the canonical CADS-mapped JSON whenever the payload or source changes
+  useEffect(() => {
+    if (sourceSystem !== 'CADS') {
+      setMappedPayload(null);
+      setMappingErrors([]);
+      return;
+    }
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      let parsed;
+      try { parsed = JSON.parse(payload); } catch { return; }
+      setMappingLoading(true);
+      try {
+        const data = await apiFetch('/api/v1/inbound/cads/transform', {
+          method: 'POST',
+          body: JSON.stringify(parsed),
+        });
+        setMappedPayload(data.payload);
+        setMappingErrors(data.errors || []);
+      } catch (err) {
+        setMappedPayload(err.payload || null);
+        setMappingErrors(err.errors || []);
+      } finally {
+        setMappingLoading(false);
+      }
+    }, 400);
+    return () => clearTimeout(debounceRef.current);
+  }, [payload, sourceSystem]);
 
   function onSourceChange(src) {
     setSourceSystem(src);
@@ -149,6 +191,47 @@ export default function TestIngest() {
           {loading ? 'Submitting…' : `Submit to ${sourceSystem}`}
         </button>
       </form>
+
+      {sourceSystem === 'CADS' && (
+        <div style={{ marginTop: 24, border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
+          <div style={{ background: '#f1f5f9', padding: '10px 16px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontWeight: 600, fontSize: 13 }}>🔄 CADS Mapped Payload (canonical JSON)</span>
+            {mappingLoading && <span style={{ fontSize: 12, color: '#64748b' }}>Updating…</span>}
+          </div>
+          <div style={{ padding: 16 }}>
+            {mappingErrors.length > 0 && (
+              <div style={{ background: '#fef3c7', color: '#92400e', padding: '8px 12px', borderRadius: 6, marginBottom: 12, fontSize: 12 }}>
+                <strong>Validation issues:</strong>
+                <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                  {mappingErrors.map((e, i) => <li key={i}>{e}</li>)}
+                </ul>
+              </div>
+            )}
+            {mappedPayload ? (
+              <pre style={{
+                margin: 0,
+                fontFamily: 'monospace',
+                fontSize: 12,
+                background: '#f8fafc',
+                padding: 12,
+                borderRadius: 6,
+                border: '1px solid #e2e8f0',
+                overflowX: 'auto',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}>
+                {JSON.stringify(mappedPayload, null, 2)}
+              </pre>
+            ) : (
+              !mappingLoading && (
+                <p style={{ color: '#94a3b8', fontSize: 13, margin: 0 }}>
+                  Enter a valid CADS row payload above to see the mapped canonical JSON.
+                </p>
+              )
+            )}
+          </div>
+        </div>
+      )}
 
       {error && (
         <div style={{ background: '#fee2e2', color: '#991b1b', padding: 14, borderRadius: 8, marginTop: 16 }}>
