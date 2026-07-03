@@ -46,10 +46,26 @@ api_key: poc-dev-key-1234
      "employeeEmail": "john.doe@ust.hk",
      "employeeName": "John Doe",
      "department": "Finance Management Office",
+     "orgUnit": "FMO",
+     "jobTitle": "Finance Officer",
      "role": "APPROVER",
-     "action": "provision"
+     "validFrom": "2025-01-01",
+     "validUntil": "2099-12-31",
+     "action": "provision",
+     "permissions": {
+       "enquireReqPoReceipt": true,
+       "certifyReceiptForPayment": true,
+       "approveBudgetCommitmentEproReq": true,
+       "approveBudgetCommitmentExpense": true
+     },
+     "limits": {
+       "certifyReceiptForPaymentMaxAmountHkd": 50000,
+       "approveEproReqMaxAmountHkd": 100000,
+       "approveExpenseMaxAmountHkd": 50000
+     }
    }
    ```
+   > **Tip:** You can click **"↺ Load CADS Sample"** at any time to reset the editor to this sample.
 
 4. Click **"Submit to CADS"**.
 

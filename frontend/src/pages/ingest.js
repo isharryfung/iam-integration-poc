@@ -11,7 +11,38 @@ const SAMPLE_PAYLOADS = {
     orgUnit: 'FMO',
     jobTitle: 'Finance Officer',
     role: 'APPROVER',
+    validFrom: '2025-01-01',
+    validUntil: '2099-12-31',
     action: 'provision',
+    permissions: {
+      enquireReqPoReceipt: true,
+      recordReceiptGoodsServices: true,
+      certifyReceiptForPayment: true,
+      enquireBrGeneralFms: true,
+      enquireBrStaffingHrms: false,
+      enquireBrStudentSis: false,
+      approveEnquireBudgetCommitmentAllSystems: false,
+      enquireBudgetPositionFinancialInfo: true,
+      approveBudgetCommitmentEproReq: true,
+      approveBudgetCommitmentPcard: false,
+      approveBudgetCommitmentExpense: true,
+      approveBudgetCommitmentStudentHelperTimesheet: false,
+      approveBudgetCommitmentStudentAwardBudgetRequest: false,
+      approveBudgetCommitmentCateringBooking: false,
+      approveBudgetCommitmentFoEforms: false,
+      approveBudgetCommitmentStaffBudgetRequestEform: false,
+      enquireBlockGrantSalaryAccountView: false,
+      enquireBlockGrantSalaryStaffView: false,
+    },
+    limits: {
+      certifyReceiptForPaymentMaxAmountHkd: 50000,
+      approveEproReqMaxAmountHkd: 100000,
+      approveExpenseMaxAmountHkd: 50000,
+    },
+    delegation: {
+      procurement: { allowFurtherDelegation: false },
+      budget: { allowFurtherDelegation: false },
+    },
   },
   PEOPLESOFT: {
     module: 'HRMS',
@@ -113,9 +144,33 @@ export default function TestIngest() {
 
       <form onSubmit={submit}>
         <div style={{ marginBottom: 12 }}>
-          <label style={{ fontWeight: 600, fontSize: 13, display: 'block', marginBottom: 4 }}>
-            JSON Payload for {sourceSystem}:
-          </label>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <label style={{ fontWeight: 600, fontSize: 13 }}>
+              JSON Payload for {sourceSystem}:
+              {sourceSystem === 'CADS' && (
+                <span style={{ fontWeight: 400, color: '#64748b', marginLeft: 8 }}>
+                  CADS sample payload — edit before submitting
+                </span>
+              )}
+            </label>
+            {sourceSystem === 'CADS' && (
+              <button
+                type="button"
+                onClick={() => onSourceChange('CADS')}
+                style={{
+                  padding: '4px 12px',
+                  borderRadius: 6,
+                  border: '1px solid #cbd5e1',
+                  background: 'white',
+                  color: '#1e293b',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}
+              >
+                ↺ Load CADS Sample
+              </button>
+            )}
+          </div>
           <textarea
             value={payload}
             onChange={e => validateJson(e.target.value)}
