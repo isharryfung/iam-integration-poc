@@ -180,6 +180,52 @@ For a full test script with step-by-step scenarios, see: [`docs/uat-script.md`](
 
 ---
 
+## PeopleSoft Table-Row Mapping
+
+The PeopleSoft ingest flow now accepts either:
+
+- the raw export-row JSON from the PeopleSoft access table, or
+- an already-canonical MidPoint-style JSON payload
+
+### Source-row mapping
+
+| PeopleSoft column | Canonical field |
+|---|---|
+| `Dept` | `entitlement.departmentOrProject` |
+| `Rank/ Team` | `attributes.rankOrTeam` |
+| `User` | `identity.email` or `identity.displayName` |
+| `Role Name` | `entitlement.roleName` |
+| `Remarks` | `attributes.remarks` |
+| `Data Level Security` | `attributes.dataLevelSecurity` |
+
+### Normalization rules
+
+- user IDs without a domain are normalized to `@ust.hk`
+- role names and headers are whitespace-normalized
+- known data-level-security values are mapped to canonical scopes such as
+  `ALL_STUDENTS`, `SCHOOL_DEPT_STUDENTS`, `ALL_ALUMNI`, and `CMS_ALL_CONTACTS`
+- `eventId` and `idempotencyKey` are generated automatically when absent
+
+### Example PeopleSoft ingest request
+
+```bash
+curl -X POST http://localhost:4000/api/v1/inbound/peoplesoft \
+  -H "api_key: poc-dev-key-1234" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "Dept": "DAO",
+    "Rank/ Team": "Alumni Team",
+    "User": "dao.alumni.manager",
+    "Role Name": "HKUST ALUM ADMIN DOWNLOAD DATA",
+    "Remarks": "Access to AAS",
+    "Data Level Security": "All alumni"
+  }'
+```
+
+On the **Test Ingest** page, selecting **PEOPLESOFT** now loads the same table-row JSON sample, and the **MidPoint Preview** page shows both the original row and the transformed canonical payload.
+
+---
+
 ## MidPoint Preview Usage
 
 Use the new **MidPoint Preview** page at `http://localhost:3000/midpoint-preview` to:
