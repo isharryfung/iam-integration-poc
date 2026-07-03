@@ -32,6 +32,11 @@ function normalizeText(value) {
   return String(value).replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * Normalize a raw CSV column header to a canonical uppercase key.
+ * Strips non-alphanumeric/underscore characters, collapses separators to `_`,
+ * trims leading/trailing underscores, and uppercases.
+ */
 function normalizeHeader(value) {
   return String(value || '')
     .replace(/[^a-zA-Z0-9_]+/g, '_')
@@ -147,5 +152,6 @@ const jspmIdentifierKeys = ['ROLE_GROUP_DESC', 'USER_NAM', 'ROLE_GROUP_ID_1', 'D
 module.exports = {
   columnMap,
   jspmIdentifierKeys,
+  normalizeJspmHeader: normalizeHeader,
   transformJspmRow,
 };

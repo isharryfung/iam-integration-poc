@@ -8,7 +8,7 @@ const { writeAudit } = require('../utils/audit');
 const { ingestLimiter, queryLimiter } = require('../middleware/rateLimiter');
 const { transformCadsRow, cadsIdentifierKeys } = require('../transformers/cads.transformer');
 const { buildEcmCombinedPayloads } = require('../transformers/ecm.transformer');
-const { transformJspmRow, jspmIdentifierKeys } = require('../transformers/jspm.transformer');
+const { transformJspmRow, jspmIdentifierKeys, normalizeJspmHeader } = require('../transformers/jspm.transformer');
 
 /**
  * POST /api/v1/inbound/events
@@ -366,9 +366,7 @@ function setSource(system) {
 function isJspmRawRow(body) {
   if (!body || typeof body !== 'object') return false;
   if (body.meta || body.identity || body.entitlement) return false;
-  const normalizedKeys = Object.keys(body).map((k) =>
-    String(k).replace(/[^a-zA-Z0-9_]+/g, '_').replace(/^_+|_+$/g, '').toUpperCase()
-  );
+  const normalizedKeys = Object.keys(body).map(normalizeJspmHeader);
   const hits = jspmIdentifierKeys.filter((marker) => normalizedKeys.includes(marker));
   return hits.length >= 2;
 }
