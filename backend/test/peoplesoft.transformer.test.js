@@ -25,7 +25,6 @@ test('transformPeoplesoftRow normalizes headers, default email domain, and data 
 
 test('transformPeoplesoftRow reports validation errors for incomplete rows', () => {
   const result = transformPeoplesoftRow({
-    Dept: 'DAO',
     Remarks: 'Access to AAS',
   });
 
@@ -33,6 +32,7 @@ test('transformPeoplesoftRow reports validation errors for incomplete rows', () 
   assert.deepEqual(result.errors, [
     'identity.email or identity.displayName is required',
     'entitlement.roleName is required',
+    'entitlement.departmentOrProject is required',
   ]);
 });
 

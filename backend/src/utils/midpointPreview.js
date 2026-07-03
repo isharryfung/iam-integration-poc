@@ -190,7 +190,13 @@ function validateMidpointInput(midpointInput) {
   const application = requireValue(midpointInput.entitlement && midpointInput.entitlement.application, 'entitlement.application', 'Target application');
   const roleName = requireValue(midpointInput.entitlement && midpointInput.entitlement.roleName, 'entitlement.roleName', 'Role name');
   if (!email && !(sourceSystem === 'PEOPLESOFT' && displayName)) {
-    addIssue('missing', 'identity.email', 'Identity email is required');
+    addIssue(
+      'missing',
+      'identity.email',
+      sourceSystem === 'PEOPLESOFT'
+        ? 'Identity email or displayName is required for PeopleSoft events'
+        : 'Identity email is required'
+    );
   }
 
   if (eventTime && Number.isNaN(new Date(eventTime).getTime())) {

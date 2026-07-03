@@ -8,21 +8,6 @@ const columnMapPeoplesoft = {
   Remarks: 'attributes.remarks',
   'Data Level Security': 'attributes.dataLevelSecurity',
 };
-const UNSAFE_PATH_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
-
-function setDeep(target, path, value) {
-  const keys = path.split('.');
-  let current = target;
-  for (let i = 0; i < keys.length - 1; i += 1) {
-    const key = keys[i];
-    if (UNSAFE_PATH_KEYS.has(key)) return;
-    if (!current[key] || typeof current[key] !== 'object') current[key] = {};
-    current = current[key];
-  }
-  const finalKey = keys[keys.length - 1];
-  if (UNSAFE_PATH_KEYS.has(finalKey)) return;
-  current[finalKey] = value;
-}
 
 function normalizeHeader(value) {
   return String(value || '')
@@ -158,16 +143,28 @@ function transformPeoplesoftRow(row, opts = {}) {
     }
 
     if (targetPath === 'entitlement.roleName') {
-      setDeep(payload, targetPath, normalizeRoleName(rawValue));
+      payload.entitlement.roleName = normalizeRoleName(rawValue);
       return;
     }
 
     if (targetPath === 'attributes.dataLevelSecurity') {
-      setDeep(payload, targetPath, normalizeDataLevelSecurity(rawValue));
+      payload.attributes.dataLevelSecurity = normalizeDataLevelSecurity(rawValue);
       return;
     }
 
-    setDeep(payload, targetPath, textValue);
+    if (targetPath === 'entitlement.departmentOrProject') {
+      payload.entitlement.departmentOrProject = textValue;
+      return;
+    }
+
+    if (targetPath === 'attributes.rankOrTeam') {
+      payload.attributes.rankOrTeam = textValue;
+      return;
+    }
+
+    if (targetPath === 'attributes.remarks') {
+      payload.attributes.remarks = textValue;
+    }
   });
 
   payload.identity.userType = normalizeText(opts.userType) || 'staff';
