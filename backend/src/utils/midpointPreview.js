@@ -162,10 +162,6 @@ function validateMidpointInput(midpointInput) {
     addIssue('missing', 'identity.staffId', 'Staff ID is required for CADS events');
   }
 
-  if (sourceSystem === 'PEOPLESOFT' && (!midpointInput.entitlement || !midpointInput.entitlement.roleName)) {
-    addIssue('missing', 'entitlement.roleName', 'Role name is required for PeopleSoft events');
-  }
-
   return {
     isValid: errors.length === 0,
     status: errors.length === 0 ? 'pass' : 'fail',
