@@ -142,19 +142,19 @@ function validateMidpointInput(midpointInput) {
     if (!valid) addIssue('invalid', 'identity.email', reason);
   }
 
-  if (sourceSystem === 'ECM' && !midpointInput.entitlement.documentClass) {
+  if (sourceSystem === 'ECM' && (!midpointInput.entitlement || !midpointInput.entitlement.documentClass)) {
     addIssue('missing', 'entitlement.documentClass', 'Document class is required for ECM events');
   }
 
-  if (sourceSystem === 'JSPM' && !midpointInput.entitlement.projectCode) {
+  if (sourceSystem === 'JSPM' && (!midpointInput.entitlement || !midpointInput.entitlement.projectCode)) {
     addIssue('missing', 'entitlement.projectCode', 'Project code is required for JSPM events');
   }
 
-  if (sourceSystem === 'CADS' && !midpointInput.identity.staffId) {
+  if (sourceSystem === 'CADS' && (!midpointInput.identity || !midpointInput.identity.staffId)) {
     addIssue('missing', 'identity.staffId', 'Staff ID is required for CADS events');
   }
 
-  if (sourceSystem === 'PEOPLESOFT' && !roleName) {
+  if (sourceSystem === 'PEOPLESOFT' && (!midpointInput.entitlement || !midpointInput.entitlement.roleName)) {
     addIssue('missing', 'entitlement.roleName', 'PeopleSoft previews require a role or job code');
   }
 
