@@ -7,6 +7,7 @@ const { transformPeoplesoftRow } = require('../transformers/peoplesoft.transform
 const { writeAudit } = require('../utils/audit');
 const { ingestLimiter, queryLimiter } = require('../middleware/rateLimiter');
 const { transformCadsRow, cadsIdentifierKeys } = require('../transformers/cads.transformer');
+const { buildEcmCombinedPayloads } = require('../transformers/ecm.transformer');
 
 /**
  * POST /api/v1/inbound/events
@@ -216,6 +217,56 @@ router.post('/peoplesoft/preview', queryLimiter, async (req, res) => {
     isValid: transformed.isValid,
     errors: transformed.errors,
     mappedPayload: transformed.payload,
+  });
+});
+
+/**
+ * POST /api/v1/inbound/ecm/preview
+ * Merges ECM usergroup-user + usergroup-doctype rows into combined canonical
+ * payloads (one per user) and returns them without persisting anything.
+ *
+ * Request body:
+ *   { membershipRows: [...], groupItemRows: [...] }
+ * or a pre-built combined canonical ECM payload:
+ *   { meta: { sourceSystem: 'ECM', operation: 'UPSERT_USER_EFFECTIVE_ACCESS' }, ... }
+ */
+router.post('/ecm/preview', queryLimiter, async (req, res) => {
+  const body = req.body || {};
+
+  // Accept a pre-built combined canonical payload directly
+  if (body.meta && body.meta.sourceSystem === 'ECM') {
+    return res.json({
+      sourceSystem: 'ECM',
+      isValid: true,
+      errors: [],
+      combined: [{ username: (body.identity && body.identity.externalUserId) || 'unknown', isValid: true, errors: [], diagnostics: [], payload: body }],
+    });
+  }
+
+  const membershipRows = body.membershipRows;
+  const groupItemRows  = body.groupItemRows;
+
+  if (!Array.isArray(membershipRows) || !Array.isArray(groupItemRows)) {
+    return res.status(400).json({
+      error: 'Request body must contain "membershipRows" and "groupItemRows" arrays, or a pre-built ECM canonical payload',
+    });
+  }
+
+  if (membershipRows.length === 0 && groupItemRows.length === 0) {
+    return res.status(400).json({ error: '"membershipRows" or "groupItemRows" must be non-empty' });
+  }
+
+  const results = buildEcmCombinedPayloads(membershipRows, groupItemRows, {
+    correlationId: req.correlationId,
+  });
+
+  const allValid = results.every(r => r.isValid);
+
+  return res.json({
+    sourceSystem: 'ECM',
+    isValid: allValid,
+    errors: allValid ? [] : results.filter(r => !r.isValid).map(r => `${r.username}: ${r.errors.join('; ')}`),
+    combined: results,
   });
 });
 

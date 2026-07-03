@@ -30,14 +30,19 @@ const SAMPLE_PAYLOADS = {
     Remarks: 'Access to AAS',
     'Data Level Security': 'All alumni',
   },
+  // ECM combined input: membership rows (usergroup-user) + group-item rows (usergroup-doctype)
+  // The backend /ecm/preview endpoint merges these into one combined payload per user.
   ECM: {
-    userId: 'ECM-001',
-    userEmail: 'alice.chan@ust.hk',
-    userName: 'Alice Chan',
-    documentClass: 'FINANCE_CONTRACTS',
-    role: 'READER',
-    accessLevel: 'L2',
-    action: 'provision',
+    membershipRows: [
+      { USERGROUPNAME: 'AR_All_Docs', USERNAME: 'ARIVY' },
+      { USERGROUPNAME: 'AR_RS_MGT',   USERNAME: 'ARIVY' },
+      { USERGROUPNAME: 'AR_All_Docs', USERNAME: 'BWONG' },
+    ],
+    groupItemRows: [
+      { USERGROUPNAME: 'AR_All_Docs', ITEMTYPENAME: 'AR: Academic Transcript',              Dept: 'ARO', Team: null, 'Function/ Role?': null },
+      { USERGROUPNAME: 'AR_All_Docs', ITEMTYPENAME: 'AR: Degree Diploma',                   Dept: 'ARO', Team: null, 'Function/ Role?': null },
+      { USERGROUPNAME: 'AR_RS_MGT',   ITEMTYPENAME: 'AR: Special Student Document (Confidential)', Dept: 'ARO', Team: null, 'Function/ Role?': null },
+    ],
   },
   JSPM: {
     projectCode: 'PROJ-2026-001',
@@ -91,6 +96,9 @@ export default function TestIngest() {
   const [mappedPreview, setMappedPreview] = useState(null);
   const [mappedPreviewLoading, setMappedPreviewLoading] = useState(false);
   const [mappedPreviewError, setMappedPreviewError] = useState('');
+  const [ecmPreview, setEcmPreview] = useState(null);
+  const [ecmPreviewLoading, setEcmPreviewLoading] = useState(false);
+  const [ecmPreviewError, setEcmPreviewError] = useState('');
 
   function onSourceChange(src) {
     setSourceSystem(src);
@@ -100,6 +108,8 @@ export default function TestIngest() {
     setError('');
     setMappedPreview(null);
     setMappedPreviewError('');
+    setEcmPreview(null);
+    setEcmPreviewError('');
   }
 
   function validateJson(val) {
@@ -162,6 +172,45 @@ export default function TestIngest() {
         setMappedPreviewError(err.error || err.message || 'Unable to generate PeopleSoft mapped payload preview');
       } finally {
         setMappedPreviewLoading(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [payload, sourceSystem]);
+
+  useEffect(() => {
+    if (sourceSystem !== 'ECM') {
+      setEcmPreview(null);
+      setEcmPreviewLoading(false);
+      setEcmPreviewError('');
+      return;
+    }
+
+    let parsedPayload;
+    try {
+      parsedPayload = JSON.parse(payload);
+    } catch {
+      setEcmPreview(null);
+      setEcmPreviewLoading(false);
+      setEcmPreviewError('');
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setEcmPreviewLoading(true);
+      setEcmPreviewError('');
+      try {
+        const data = await apiFetch('/api/v1/inbound/ecm/preview', {
+          method: 'POST',
+          headers: { 'X-Source-System': 'ECM', 'Idempotency-Key': `ui-ecm-preview-${Date.now()}` },
+          body: JSON.stringify(parsedPayload),
+        });
+        setEcmPreview(data);
+      } catch (err) {
+        setEcmPreview(null);
+        setEcmPreviewError(err.error || err.message || 'Unable to generate ECM combined payload preview');
+      } finally {
+        setEcmPreviewLoading(false);
       }
     }, 300);
 
@@ -282,6 +331,69 @@ export default function TestIngest() {
                 >
                   {JSON.stringify(mappedPreview.mappedPayload, null, 2)}
                 </pre>
+              </div>
+            )}
+          </div>
+        )}
+
+        {sourceSystem === 'ECM' && (
+          <div style={{ marginTop: 14 }}>
+            <p style={{ marginBottom: 8, fontSize: 12, fontWeight: 600, color: '#334155' }}>
+              ECM combined mapped payload preview
+            </p>
+            <p style={{ marginTop: 0, marginBottom: 8, fontSize: 12, color: '#64748b' }}>
+              Merges <strong>usergroup-user</strong> (membershipRows) and <strong>usergroup-doctype</strong> (groupItemRows) into one combined payload per user.
+            </p>
+
+            {ecmPreviewLoading && (
+              <p style={{ margin: 0, color: '#64748b', fontSize: 12 }}>Generating preview…</p>
+            )}
+
+            {ecmPreviewError && (
+              <div style={{ background: '#fee2e2', color: '#991b1b', padding: 10, borderRadius: 8, fontSize: 12 }}>
+                ⚠️ {ecmPreviewError}
+              </div>
+            )}
+
+            {ecmPreview && (
+              <div
+                style={{
+                  marginTop: 8,
+                  border: '1px solid #bbf7d0',
+                  borderRadius: 8,
+                  background: '#f0fdf4',
+                  padding: 12,
+                }}
+              >
+                <p style={{ marginTop: 0, marginBottom: 8, fontSize: 12, color: ecmPreview.isValid ? '#065f46' : '#92400e' }}>
+                  {ecmPreview.isValid ? '✅ ECM combined payload valid' : '⚠️ ECM mapping issues found'}
+                  {ecmPreview.combined && ` — ${ecmPreview.combined.length} user(s)`}
+                </p>
+                {!ecmPreview.isValid && ecmPreview.errors && ecmPreview.errors.length > 0 && (
+                  <ul style={{ marginTop: 0, marginBottom: 10, paddingLeft: 18, fontSize: 12, color: '#92400e' }}>
+                    {ecmPreview.errors.map((item, i) => <li key={i}>{item}</li>)}
+                  </ul>
+                )}
+                {ecmPreview.combined && ecmPreview.combined.map((entry, i) => (
+                  <div key={entry.username || i} style={{ marginBottom: 12 }}>
+                    <p style={{ margin: '0 0 4px', fontSize: 12, fontWeight: 600, color: '#1e40af' }}>
+                      👤 {entry.username}
+                    </p>
+                    <pre
+                      style={{
+                        margin: 0,
+                        background: '#0f172a',
+                        color: '#e2e8f0',
+                        borderRadius: 8,
+                        padding: 12,
+                        fontSize: 12,
+                        overflowX: 'auto',
+                      }}
+                    >
+                      {JSON.stringify(entry.payload, null, 2)}
+                    </pre>
+                  </div>
+                ))}
               </div>
             )}
           </div>
