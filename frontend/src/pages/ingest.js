@@ -84,47 +84,47 @@ export default function TestIngest() {
     } finally {
       setLoading(false);
     }
-
-    useEffect(() => {
-      if (sourceSystem !== 'PEOPLESOFT') {
-        setMappedPreview(null);
-        setMappedPreviewLoading(false);
-        setMappedPreviewError('');
-        return;
-      }
-
-      let parsedPayload;
-      try {
-        parsedPayload = JSON.parse(payload);
-      } catch {
-        setMappedPreview(null);
-        setMappedPreviewLoading(false);
-        setMappedPreviewError('');
-        return;
-      }
-
-      const timer = setTimeout(async () => {
-        setMappedPreviewLoading(true);
-        setMappedPreviewError('');
-
-        try {
-          const data = await apiFetch('/api/v1/inbound/peoplesoft/preview', {
-            method: 'POST',
-            headers: { 'X-Source-System': 'PEOPLESOFT', 'Idempotency-Key': `ui-preview-${Date.now()}` },
-            body: JSON.stringify(parsedPayload),
-          });
-          setMappedPreview(data);
-        } catch (err) {
-          setMappedPreview(null);
-          setMappedPreviewError(err.error || err.message || 'Unable to generate PeopleSoft mapped payload preview');
-        } finally {
-          setMappedPreviewLoading(false);
-        }
-      }, 300);
-
-      return () => clearTimeout(timer);
-    }, [payload, sourceSystem]);
   }
+
+  useEffect(() => {
+    if (sourceSystem !== 'PEOPLESOFT') {
+      setMappedPreview(null);
+      setMappedPreviewLoading(false);
+      setMappedPreviewError('');
+      return;
+    }
+
+    let parsedPayload;
+    try {
+      parsedPayload = JSON.parse(payload);
+    } catch {
+      setMappedPreview(null);
+      setMappedPreviewLoading(false);
+      setMappedPreviewError('');
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setMappedPreviewLoading(true);
+      setMappedPreviewError('');
+
+      try {
+        const data = await apiFetch('/api/v1/inbound/peoplesoft/preview', {
+          method: 'POST',
+          headers: { 'X-Source-System': 'PEOPLESOFT', 'Idempotency-Key': `ui-preview-${Date.now()}` },
+          body: JSON.stringify(parsedPayload),
+        });
+        setMappedPreview(data);
+      } catch (err) {
+        setMappedPreview(null);
+        setMappedPreviewError(err.error || err.message || 'Unable to generate PeopleSoft mapped payload preview');
+      } finally {
+        setMappedPreviewLoading(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [payload, sourceSystem]);
 
   return (
     <div>
