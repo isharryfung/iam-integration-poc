@@ -256,17 +256,18 @@ router.post('/ecm/preview', queryLimiter, async (req, res) => {
     return res.status(400).json({ error: '"membershipRows" or "groupItemRows" must be non-empty' });
   }
 
-  const results = buildEcmCombinedPayloads(membershipRows, groupItemRows, {
+  const { combined, diagnostics } = buildEcmCombinedPayloads(membershipRows, groupItemRows, {
     correlationId: req.correlationId,
   });
 
-  const allValid = results.every(r => r.isValid);
+  const allValid = combined.every(r => r.isValid);
 
   return res.json({
     sourceSystem: 'ECM',
     isValid: allValid,
-    errors: allValid ? [] : results.filter(r => !r.isValid).map(r => `${r.username}: ${r.errors.join('; ')}`),
-    combined: results,
+    errors: allValid ? [] : combined.filter(r => !r.isValid).map(r => `${r.username}: ${r.errors.join('; ')}`),
+    diagnostics,
+    combined,
   });
 });
 

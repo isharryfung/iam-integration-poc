@@ -87,15 +87,15 @@ const sampleGroupItemRows = [
 ];
 
 test('buildEcmCombinedPayloads: returns one result per unique username', () => {
-  const results = buildEcmCombinedPayloads(sampleMembershipRows, sampleGroupItemRows);
-  assert.equal(results.length, 2);
-  const usernames = results.map(r => r.username).sort();
+  const { combined } = buildEcmCombinedPayloads(sampleMembershipRows, sampleGroupItemRows);
+  assert.equal(combined.length, 2);
+  const usernames = combined.map(r => r.username).sort();
   assert.deepEqual(usernames, ['ARIVY', 'BWONG']);
 });
 
 test('buildEcmCombinedPayloads: ARIVY has two memberships and three doc-type entitlements', () => {
-  const results = buildEcmCombinedPayloads(sampleMembershipRows, sampleGroupItemRows);
-  const arivy = results.find(r => r.username === 'ARIVY');
+  const { combined } = buildEcmCombinedPayloads(sampleMembershipRows, sampleGroupItemRows);
+  const arivy = combined.find(r => r.username === 'ARIVY');
   assert.ok(arivy);
   assert.equal(arivy.isValid, true);
   assert.equal(arivy.payload.attributes.memberships.length, 2);
@@ -105,16 +105,16 @@ test('buildEcmCombinedPayloads: ARIVY has two memberships and three doc-type ent
 });
 
 test('buildEcmCombinedPayloads: BWONG has one membership and two doc-type entitlements', () => {
-  const results = buildEcmCombinedPayloads(sampleMembershipRows, sampleGroupItemRows);
-  const bwong = results.find(r => r.username === 'BWONG');
+  const { combined } = buildEcmCombinedPayloads(sampleMembershipRows, sampleGroupItemRows);
+  const bwong = combined.find(r => r.username === 'BWONG');
   assert.ok(bwong);
   assert.equal(bwong.payload.attributes.memberships.length, 1);
   assert.equal(bwong.payload.attributes.groupEntitlements.length, 2);
 });
 
 test('buildEcmCombinedPayloads: canonical payload shape is correct', () => {
-  const results = buildEcmCombinedPayloads(sampleMembershipRows, sampleGroupItemRows, { defaultDomain: 'ust.hk' });
-  const arivy = results.find(r => r.username === 'ARIVY');
+  const { combined } = buildEcmCombinedPayloads(sampleMembershipRows, sampleGroupItemRows, { defaultDomain: 'ust.hk' });
+  const arivy = combined.find(r => r.username === 'ARIVY');
   const p = arivy.payload;
 
   assert.equal(p.meta.sourceSystem, 'ECM');
@@ -131,10 +131,12 @@ test('buildEcmCombinedPayloads: blank membership rows are skipped silently', () 
     { USERGROUPNAME: '',    USERNAME: 'ALICE' }, // blank — should be skipped
     { USERGROUPNAME: 'GRP', USERNAME: ''      }, // blank — should be skipped
   ];
-  const results = buildEcmCombinedPayloads(rows, []);
+  const { combined, diagnostics } = buildEcmCombinedPayloads(rows, []);
   // Only ALICE with valid GRP membership should produce a result
-  assert.equal(results.length, 1);
-  assert.equal(results[0].username, 'ALICE');
+  assert.equal(combined.length, 1);
+  assert.equal(combined[0].username, 'ALICE');
+  // Global diagnostics should contain the two skipped row messages
+  assert.equal(diagnostics.length, 2);
 });
 
 test('buildEcmCombinedPayloads: blank group-item rows are skipped silently', () => {
@@ -144,20 +146,23 @@ test('buildEcmCombinedPayloads: blank group-item rows are skipped silently', () 
     { USERGROUPNAME: '',    ITEMTYPENAME: 'MissingGroup' }, // blank — skipped
     { USERGROUPNAME: 'GRP', ITEMTYPENAME: ''            }, // blank — skipped
   ];
-  const results = buildEcmCombinedPayloads(memberRows, itemRows);
-  assert.equal(results.length, 1);
-  assert.equal(results[0].payload.attributes.groupEntitlements.length, 1);
-  assert.equal(results[0].payload.attributes.groupEntitlements[0].resourceName, 'ValidDoc');
+  const { combined, diagnostics } = buildEcmCombinedPayloads(memberRows, itemRows);
+  assert.equal(combined.length, 1);
+  assert.equal(combined[0].payload.attributes.groupEntitlements.length, 1);
+  assert.equal(combined[0].payload.attributes.groupEntitlements[0].resourceName, 'ValidDoc');
+  // Two group-item rows skipped → two diagnostics
+  assert.equal(diagnostics.length, 2);
 });
 
-test('buildEcmCombinedPayloads: empty inputs return empty array', () => {
-  const results = buildEcmCombinedPayloads([], []);
-  assert.deepEqual(results, []);
+test('buildEcmCombinedPayloads: empty inputs return empty combined array', () => {
+  const { combined, diagnostics } = buildEcmCombinedPayloads([], []);
+  assert.deepEqual(combined, []);
+  assert.deepEqual(diagnostics, []);
 });
 
 test('buildEcmCombinedPayloads: user with no matching group items has empty groupEntitlements', () => {
   const memberRows = [{ USERGROUPNAME: 'UNKNOWN_GRP', USERNAME: 'ZETA' }];
-  const results = buildEcmCombinedPayloads(memberRows, sampleGroupItemRows);
-  assert.equal(results[0].payload.attributes.groupEntitlements.length, 0);
-  assert.equal(results[0].payload.attributes.effectiveAccessSummary.totalDocTypes, 0);
+  const { combined } = buildEcmCombinedPayloads(memberRows, sampleGroupItemRows);
+  assert.equal(combined[0].payload.attributes.groupEntitlements.length, 0);
+  assert.equal(combined[0].payload.attributes.effectiveAccessSummary.totalDocTypes, 0);
 });

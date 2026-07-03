@@ -81,8 +81,7 @@ function transformEcmGroupItemRow(row) {
   const dept         = normalizeText(norm['dept']) || null;
   const team         = normalizeText(norm['team']) || null;
   // "Function/ Role?" normalises to "function role"
-  const functionOrRole =
-    normalizeText(norm['function role'] || norm['function role '] || norm['function  role']) || null;
+  const functionOrRole = normalizeText(norm['function role']) || null;
 
   const errors = [];
   if (!groupName)    errors.push('USERGROUPNAME is required');
@@ -108,13 +107,15 @@ function transformEcmGroupItemRow(row) {
  * @param {string}   [opts.correlationId]
  * @param {string}   [opts.eventTime]   - ISO string; defaults to now
  *
- * @returns {Array<{
- *   username: string,
- *   isValid: boolean,
- *   errors: string[],
- *   diagnostics: string[],
- *   payload: Object
- * }>}
+ * @returns {{
+ *   combined: Array<{
+ *     username: string,
+ *     isValid: boolean,
+ *     errors: string[],
+ *     payload: Object
+ *   }>,
+ *   diagnostics: string[]
+ * }}
  */
 function buildEcmCombinedPayloads(membershipRows, groupItemRows, opts = {}) {
   const defaultDomain = opts.defaultDomain || 'ust.hk';
@@ -122,12 +123,12 @@ function buildEcmCombinedPayloads(membershipRows, groupItemRows, opts = {}) {
 
   // 1. Parse and index group-item rows by groupName (skip invalid)
   const groupItemsByGroup = new Map(); // groupName → groupItem[]
-  const groupItemDiagnostics = [];
+  const globalDiagnostics = [];
 
   for (const raw of (groupItemRows || [])) {
     const r = transformEcmGroupItemRow(raw);
     if (!r.isValid) {
-      groupItemDiagnostics.push(...r.errors.map(e => `group-item row skipped: ${e}`));
+      globalDiagnostics.push(...r.errors.map(e => `group-item row skipped: ${e}`));
       continue;
     }
     if (!groupItemsByGroup.has(r.groupName)) groupItemsByGroup.set(r.groupName, []);
@@ -135,25 +136,24 @@ function buildEcmCombinedPayloads(membershipRows, groupItemRows, opts = {}) {
   }
 
   // 2. Parse membership rows; group by username (skip invalid)
-  const membershipsByUser = new Map(); // username → { groups: Set<string>, diagnostics: string[] }
-  const membershipDiagnostics = [];
+  const membershipsByUser = new Map(); // username → Set<string>
 
   for (const raw of (membershipRows || [])) {
     const r = transformEcmMembershipRow(raw);
     if (!r.isValid) {
-      membershipDiagnostics.push(...r.errors.map(e => `membership row skipped: ${e}`));
+      globalDiagnostics.push(...r.errors.map(e => `membership row skipped: ${e}`));
       continue;
     }
     if (!membershipsByUser.has(r.username)) {
-      membershipsByUser.set(r.username, { groups: new Set(), diagnostics: [] });
+      membershipsByUser.set(r.username, new Set());
     }
-    membershipsByUser.get(r.username).groups.add(r.groupName);
+    membershipsByUser.get(r.username).add(r.groupName);
   }
 
   // 3. Build one combined payload per user
-  const results = [];
+  const combined = [];
 
-  for (const [username, { groups, diagnostics: userDiag }] of membershipsByUser.entries()) {
+  for (const [username, groups] of membershipsByUser.entries()) {
     const memberships = Array.from(groups).map(g => ({ groupName: g }));
 
     // Resolve group entitlements for all groups this user belongs to
@@ -205,16 +205,15 @@ function buildEcmCombinedPayloads(membershipRows, groupItemRows, opts = {}) {
     const errors = [];
     if (memberships.length === 0) errors.push('No valid group memberships found for user');
 
-    results.push({
+    combined.push({
       username,
-      isValid:     errors.length === 0,
+      isValid: errors.length === 0,
       errors,
-      diagnostics: [...userDiag, ...groupItemDiagnostics, ...membershipDiagnostics],
       payload,
     });
   }
 
-  return results;
+  return { combined, diagnostics: globalDiagnostics };
 }
 
 module.exports = {
