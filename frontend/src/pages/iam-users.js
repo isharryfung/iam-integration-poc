@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiFetch } from '../lib/api';
 import {
@@ -153,8 +153,8 @@ export default function IamUsers() {
                   const legacyCount = grouped.OTHER?.length || 0;
 
                   return (
-                    <>
-                      <tr key={u.userId} style={{ borderBottom: editingUserId === u.userId ? 'none' : '1px solid #f1f5f9' }}>
+                    <Fragment key={u.userId}>
+                      <tr style={{ borderBottom: editingUserId === u.userId ? 'none' : '1px solid #f1f5f9' }}>
                         <td style={{ padding: '10px 14px', fontFamily: 'monospace', color: '#1e40af', fontWeight: 600 }}>
                           {u.userId}
                         </td>
@@ -341,7 +341,7 @@ export default function IamUsers() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
               </tbody>
