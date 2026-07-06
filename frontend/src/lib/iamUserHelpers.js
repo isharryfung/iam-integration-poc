@@ -8,6 +8,64 @@ export const STATE_BADGE_STYLES = {
   suspended: { bg: '#fef9c3', color: '#854d0e' },
 };
 
+export const PERMISSION_SYSTEMS = [
+  { key: 'CADS', label: 'CADS' },
+  { key: 'PEOPLESOFT', label: 'PeopleSoft' },
+  { key: 'ECM', label: 'ECM' },
+  { key: 'JSPM', label: 'JSPM' },
+];
+
+const PERMISSION_SYSTEM_KEYS = new Set(PERMISSION_SYSTEMS.map((system) => system.key));
+
+function unique(values = []) {
+  return [...new Set(values)];
+}
+
+export function groupRolesBySystem(roles = []) {
+  const grouped = {
+    CADS: [],
+    PEOPLESOFT: [],
+    ECM: [],
+    JSPM: [],
+    OTHER: [],
+  };
+
+  roles.forEach((value) => {
+    const role = String(value || '').trim();
+    if (!role) return;
+
+    const [prefix, ...rest] = role.split(':');
+    const systemKey = prefix ? prefix.trim().toUpperCase() : '';
+    const permission = rest.join(':').trim().toUpperCase();
+
+    if (PERMISSION_SYSTEM_KEYS.has(systemKey) && permission) {
+      grouped[systemKey].push(permission);
+      return;
+    }
+
+    grouped.OTHER.push(role.toUpperCase());
+  });
+
+  return Object.fromEntries(
+    Object.entries(grouped).map(([key, values]) => [key, unique(values)])
+  );
+}
+
+export function flattenPermissionGroups(grouped = {}) {
+  const scopedPermissions = PERMISSION_SYSTEMS.flatMap(({ key }) =>
+    (grouped[key] || [])
+      .map((permission) => String(permission || '').trim().toUpperCase())
+      .filter(Boolean)
+      .map((permission) => `${key}:${permission}`)
+  );
+
+  const legacyPermissions = (grouped.OTHER || [])
+    .map((permission) => String(permission || '').trim().toUpperCase())
+    .filter(Boolean);
+
+  return unique([...scopedPermissions, ...legacyPermissions]);
+}
+
 export function StateBadge({ state }) {
   const style = STATE_BADGE_STYLES[state] || { bg: '#f1f5f9', color: '#475569' };
   return (

@@ -171,10 +171,10 @@ permission and reporting-line views.
 | Route | Description |
 |-------|-------------|
 | `/iam-users` | User list — browse all users, see roles and lifecycle state |
-| `/iam-users/:userId` | User detail — view/edit permissions (roles), view read-only reporting line |
+| `/iam-users/:userId` | User detail — view/edit permissions grouped by source system, view read-only reporting line |
 
 ### Features
-- **Permissions** (editable): add or remove roles, save via `PUT /api/iam/users/:userId/permissions`
+- **Permissions** (editable): add or remove permissions separately for CADS, PeopleSoft, ECM, and JSPM, then save via `PUT /api/iam/users/:userId/permissions`
 - **Reporting line** (read-only): select a fixed action (`annual_leave`, `sick_leave`, `epdr`) or enter a custom action to view the mock approver chain
 
 ### Mock data

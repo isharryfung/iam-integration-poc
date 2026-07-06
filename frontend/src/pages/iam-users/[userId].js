@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { apiFetch } from '../../lib/api';
-import { StateBadge } from '../../lib/iamUserHelpers';
+import {
+  flattenPermissionGroups,
+  groupRolesBySystem,
+  PERMISSION_SYSTEMS,
+  StateBadge,
+} from '../../lib/iamUserHelpers';
 
 const FIXED_ACTIONS = ['annual_leave', 'sick_leave', 'epdr'];
 
@@ -27,8 +32,8 @@ export default function IamUserDetail() {
   const [userError, setUserError] = useState('');
 
   // Permissions editing
-  const [editRoles, setEditRoles] = useState([]);
-  const [newRole, setNewRole] = useState('');
+  const [editPermissions, setEditPermissions] = useState(groupRolesBySystem([]));
+  const [newPermissions, setNewPermissions] = useState({});
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState('');
   const [saveError, setSaveError] = useState('');
@@ -46,7 +51,7 @@ export default function IamUserDetail() {
     apiFetch(`/api/iam/users/${encodeURIComponent(userId)}`)
       .then((data) => {
         setUser(data);
-        setEditRoles(data.roles || []);
+        setEditPermissions(groupRolesBySystem(data.roles || []));
       })
       .catch((err) => setUserError(err.error?.message || err.message || 'Failed to load user'))
       .finally(() => setLoadingUser(false));
@@ -54,19 +59,25 @@ export default function IamUserDetail() {
 
   // ── Permissions ─────────────────────────────────────────────────────────────
 
-  function handleAddRole() {
-    const role = newRole.trim().toUpperCase();
-    if (!role) return;
-    if (editRoles.includes(role)) {
-      setNewRole('');
-      return;
-    }
-    setEditRoles([...editRoles, role]);
-    setNewRole('');
+  function handleAddPermission(systemKey) {
+    const permission = (newPermissions[systemKey] || '').trim().toUpperCase();
+    if (!permission) return;
+
+    setEditPermissions((current) => {
+      if ((current[systemKey] || []).includes(permission)) return current;
+      return {
+        ...current,
+        [systemKey]: [...(current[systemKey] || []), permission],
+      };
+    });
+    setNewPermissions((current) => ({ ...current, [systemKey]: '' }));
   }
 
-  function handleRemoveRole(role) {
-    setEditRoles(editRoles.filter((r) => r !== role));
+  function handleRemovePermission(systemKey, permission) {
+    setEditPermissions((current) => ({
+      ...current,
+      [systemKey]: (current[systemKey] || []).filter((value) => value !== permission),
+    }));
   }
 
   async function handleSavePermissions() {
@@ -77,13 +88,13 @@ export default function IamUserDetail() {
       await apiFetch(`/api/iam/users/${encodeURIComponent(userId)}/permissions`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roles: editRoles }),
+        body: JSON.stringify({ roles: flattenPermissionGroups(editPermissions) }),
       });
       setSaveSuccess('Permissions saved successfully.');
       // Refresh user data
       const updated = await apiFetch(`/api/iam/users/${encodeURIComponent(userId)}`);
       setUser(updated);
-      setEditRoles(updated.roles || []);
+      setEditPermissions(groupRolesBySystem(updated.roles || []));
     } catch (err) {
       setSaveError(err.error?.message || err.message || 'Save failed');
     } finally {
@@ -164,58 +175,106 @@ export default function IamUserDetail() {
       <div style={CARD_STYLE}>
         <div style={SECTION_HEADER}>🔑 Permissions (Roles)</div>
         <p style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
-          Add or remove roles. Click <strong>Save</strong> to persist the changes.
+          Add or remove permissions by source system. Click <strong>Save</strong> to persist the changes.
         </p>
 
-        {/* Current roles */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-          {editRoles.length === 0 && (
-            <span style={{ color: '#94a3b8', fontSize: 12 }}>No roles assigned.</span>
-          )}
-          {editRoles.map((role) => (
-            <span key={role} style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              background: '#dbeafe', color: '#1e40af',
-              padding: '4px 10px', borderRadius: 12, fontSize: 12, fontWeight: 600,
+        <div style={{ display: 'grid', gap: 14, marginBottom: 14 }}>
+          {PERMISSION_SYSTEMS.map((system) => (
+            <div key={system.key} style={{
+              background: 'white',
+              border: '1px solid #e2e8f0',
+              borderRadius: 10,
+              padding: 14,
             }}>
-              {role}
-              <button
-                onClick={() => handleRemoveRole(role)}
-                title={`Remove ${role}`}
-                style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  color: '#1e40af', fontSize: 13, lineHeight: 1, padding: 0,
-                }}
-              >
-                ✕
-              </button>
-            </span>
+              <div style={{ fontWeight: 700, fontSize: 13, color: '#1e3a8a', marginBottom: 10 }}>
+                {system.label}
+              </div>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                {(editPermissions[system.key] || []).length === 0 && (
+                  <span style={{ color: '#94a3b8', fontSize: 12 }}>No permissions assigned.</span>
+                )}
+                {(editPermissions[system.key] || []).map((permission) => (
+                  <span key={`${system.key}:${permission}`} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    background: '#dbeafe', color: '#1e40af',
+                    padding: '4px 10px', borderRadius: 12, fontSize: 12, fontWeight: 600,
+                  }}>
+                    {permission}
+                    <button
+                      onClick={() => handleRemovePermission(system.key, permission)}
+                      title={`Remove ${permission}`}
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: '#1e40af', fontSize: 13, lineHeight: 1, padding: 0,
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  value={newPermissions[system.key] || ''}
+                  onChange={(e) => setNewPermissions((current) => ({ ...current, [system.key]: e.target.value }))}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddPermission(system.key)}
+                  placeholder={`New ${system.label} permission`}
+                  style={{
+                    flex: 1, padding: '8px 12px', borderRadius: 8,
+                    border: '1px solid #cbd5e1', fontSize: 13,
+                  }}
+                />
+                <button
+                  onClick={() => handleAddPermission(system.key)}
+                  style={{
+                    background: '#e2e8f0', color: '#334155',
+                    padding: '8px 16px', borderRadius: 8, border: 'none',
+                    fontWeight: 600, fontSize: 13, cursor: 'pointer',
+                  }}
+                >
+                  + Add
+                </button>
+              </div>
+            </div>
           ))}
         </div>
 
-        {/* Add role */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-          <input
-            value={newRole}
-            onChange={(e) => setNewRole(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAddRole()}
-            placeholder="New role (e.g. ADMIN)"
-            style={{
-              flex: 1, padding: '8px 12px', borderRadius: 8,
-              border: '1px solid #cbd5e1', fontSize: 13,
-            }}
-          />
-          <button
-            onClick={handleAddRole}
-            style={{
-              background: '#e2e8f0', color: '#334155',
-              padding: '8px 16px', borderRadius: 8, border: 'none',
-              fontWeight: 600, fontSize: 13, cursor: 'pointer',
-            }}
-          >
-            + Add
-          </button>
-        </div>
+        {(editPermissions.OTHER || []).length > 0 && (
+          <div style={{
+            background: '#fefce8',
+            border: '1px solid #fde68a',
+            borderRadius: 10,
+            padding: 14,
+            marginBottom: 14,
+          }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: '#854d0e', marginBottom: 8 }}>
+              Legacy permissions
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {editPermissions.OTHER.map((permission) => (
+                <span key={permission} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  background: '#fef3c7', color: '#92400e',
+                  padding: '4px 10px', borderRadius: 12, fontSize: 12, fontWeight: 600,
+                }}>
+                  {permission}
+                  <button
+                    onClick={() => handleRemovePermission('OTHER', permission)}
+                    title={`Remove ${permission}`}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      color: '#92400e', fontSize: 13, lineHeight: 1, padding: 0,
+                    }}
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Save button */}
         <button

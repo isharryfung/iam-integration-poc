@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiFetch } from '../lib/api';
-import { StateBadge } from '../lib/iamUserHelpers';
+import { groupRolesBySystem, PERMISSION_SYSTEMS, StateBadge } from '../lib/iamUserHelpers';
 
 export default function IamUsers() {
   const [users, setUsers] = useState([]);
@@ -70,8 +70,19 @@ export default function IamUsers() {
                 </tr>
               </thead>
               <tbody>
-                {users.map((u) => (
-                  <tr key={u.userId} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                {users.map((u) => {
+                  const grouped = groupRolesBySystem(u.roles || []);
+                  const scopedCounts = PERMISSION_SYSTEMS
+                    .map((system) => ({
+                      key: system.key,
+                      label: system.label,
+                      count: grouped[system.key]?.length || 0,
+                    }))
+                    .filter((system) => system.count > 0);
+                  const legacyCount = grouped.OTHER?.length || 0;
+
+                  return (
+                    <tr key={u.userId} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '10px 14px', fontFamily: 'monospace', color: '#1e40af', fontWeight: 600 }}>
                       {u.userId}
                     </td>
@@ -80,13 +91,19 @@ export default function IamUsers() {
                     <td style={{ padding: '10px 14px', color: '#475569' }}>{u.department || '—'}</td>
                     <td style={{ padding: '10px 14px' }}>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                        {(u.roles || []).map((r) => (
-                          <span key={r} style={{
+                        {scopedCounts.map((system) => (
+                          <span key={system.key} style={{
                             background: '#dbeafe', color: '#1e40af',
                             padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600,
-                          }}>{r}</span>
+                          }}>{system.label} ({system.count})</span>
                         ))}
-                        {(!u.roles || u.roles.length === 0) && (
+                        {legacyCount > 0 && (
+                          <span style={{
+                            background: '#fef3c7', color: '#92400e',
+                            padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600,
+                          }}>Legacy ({legacyCount})</span>
+                        )}
+                        {scopedCounts.length === 0 && legacyCount === 0 && (
                           <span style={{ color: '#94a3b8', fontSize: 11 }}>no roles</span>
                         )}
                       </div>
@@ -104,8 +121,9 @@ export default function IamUsers() {
                         View →
                       </Link>
                     </td>
-                  </tr>
-                ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
