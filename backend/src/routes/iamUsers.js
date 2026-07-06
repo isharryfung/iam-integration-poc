@@ -17,7 +17,7 @@ const { queryLimiter, ingestLimiter } = require('../middleware/rateLimiter');
 // For the POC the real Reporting Line service may not be available, so we
 // return realistic static mock data keyed by action.
 
-function orgSnapshotId() {
+function generateOrgSnapshotId() {
   return `ORG_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}_080000`;
 }
 
@@ -44,7 +44,7 @@ const MOCK_REPORTING_LINE = {
     audit: {
       ruleId: 'ANNUAL_LEAVE_RULE_V2',
       ruleVersion: '2.1.0',
-      orgSnapshotId: orgSnapshotId(),
+      orgSnapshotId: generateOrgSnapshotId(),
     },
   }),
   sick_leave: (user) => ({
@@ -61,7 +61,7 @@ const MOCK_REPORTING_LINE = {
     audit: {
       ruleId: 'SICK_LEAVE_RULE_V1',
       ruleVersion: '1.0.0',
-      orgSnapshotId: orgSnapshotId(),
+      orgSnapshotId: generateOrgSnapshotId(),
     },
   }),
   epdr: (user) => ({
@@ -86,7 +86,7 @@ const MOCK_REPORTING_LINE = {
     audit: {
       ruleId: 'EPDR_RULE_V3',
       ruleVersion: '3.2.0',
-      orgSnapshotId: orgSnapshotId(),
+      orgSnapshotId: generateOrgSnapshotId(),
     },
   }),
 };
@@ -100,7 +100,7 @@ function getMockReportingLine(user, action) {
     audit: {
       ruleId: 'DEFAULT_FALLBACK',
       ruleVersion: '1.0.0',
-      orgSnapshotId: orgSnapshotId(),
+      orgSnapshotId: generateOrgSnapshotId(),
     },
   };
 }

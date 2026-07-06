@@ -151,13 +151,13 @@ async function setup() {
       {
         userId: 'U001', displayName: 'Alice Chan', email: 'alice.chan@ust.hk',
         emplid: '90001001', department: 'ISD', jobcode: 'ITMGR',
-        roles: ['CADS:STAFF_PROFILE_VIEW', 'PEOPLESOFT:HR_ADMIN', 'ECM:DOC_REVIEWER'], lifecycleState: 'active',
+        roles: ['CADS:PROFILE_VIEW', 'PEOPLESOFT:HR_ADMIN', 'ECM:DOCUMENT_REVIEW'], lifecycleState: 'active',
         createdAt: now, updatedAt: now,
       },
       {
         userId: 'U002', displayName: 'Bob Lee', email: 'bob.lee@ust.hk',
         emplid: '90001002', department: 'Finance', jobcode: 'FINOFF',
-        roles: ['CADS:STAFF_PROFILE_VIEW', 'PEOPLESOFT:FINANCE_ENQUIRY'], lifecycleState: 'active',
+        roles: ['CADS:PROFILE_VIEW', 'PEOPLESOFT:FINANCE_VIEW'], lifecycleState: 'active',
         createdAt: now, updatedAt: now,
       },
       {
@@ -169,13 +169,13 @@ async function setup() {
       {
         userId: 'U004', displayName: 'David Ng', email: 'david.ng@ust.hk',
         emplid: '90001004', department: 'Research', jobcode: 'RESR',
-        roles: ['PEOPLESOFT:STUDENT_DATA_VIEW', 'JSPM:PROJECT_MEMBER'], lifecycleState: 'active',
+        roles: ['PEOPLESOFT:STUDENT_VIEW', 'JSPM:PROJECT_MEMBER'], lifecycleState: 'active',
         createdAt: now, updatedAt: now,
       },
       {
         userId: 'U005', displayName: 'Eva Lam', email: 'eva.lam@ust.hk',
         emplid: '90001005', department: 'HR', jobcode: 'HRMGR',
-        roles: ['CADS:STAFF_PROFILE_VIEW', 'PEOPLESOFT:HR_MANAGER', 'JSPM:PROJECT_APPROVER'], lifecycleState: 'inactive',
+        roles: ['CADS:PROFILE_VIEW', 'PEOPLESOFT:HR_MANAGER', 'JSPM:PROJECT_APPROVER'], lifecycleState: 'inactive',
         createdAt: now, updatedAt: now,
       },
     ]);
