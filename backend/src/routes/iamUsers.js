@@ -172,7 +172,7 @@ router.put('/:userId/permissions', ingestLimiter, async (req, res) => {
 
   // Sanitize: ensure every entry is a non-empty string
   const sanitizedRoles = roles
-    .map((r) => toSafeString(String(r)))
+    .map((r) => toSafeString(r))
     .filter(Boolean);
 
   const user = await IamUser.findOneAndUpdate(

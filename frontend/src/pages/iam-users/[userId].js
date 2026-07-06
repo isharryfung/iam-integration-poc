@@ -5,6 +5,7 @@ import { apiFetch } from '../../lib/api';
 import {
   flattenPermissionGroups,
   groupRolesBySystem,
+  normalizePermission,
   PERMISSION_SYSTEMS,
   StateBadge,
 } from '../../lib/iamUserHelpers';
@@ -60,7 +61,7 @@ export default function IamUserDetail() {
   // ── Permissions ─────────────────────────────────────────────────────────────
 
   function handleAddPermission(systemKey) {
-    const permission = (newPermissions[systemKey] || '').trim().toUpperCase();
+    const permission = normalizePermission(newPermissions[systemKey]);
     if (!permission) return;
 
     setEditPermissions((current) => {

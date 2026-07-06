@@ -21,6 +21,10 @@ function unique(values = []) {
   return [...new Set(values)];
 }
 
+export function normalizePermission(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
 export function groupRolesBySystem(roles = []) {
   const grouped = {
     CADS: [],
@@ -36,14 +40,14 @@ export function groupRolesBySystem(roles = []) {
 
     const [prefix, ...rest] = role.split(':');
     const systemKey = prefix ? prefix.trim().toUpperCase() : '';
-    const permission = rest.join(':').trim().toUpperCase();
+    const permission = normalizePermission(rest.join(':'));
 
     if (PERMISSION_SYSTEM_KEYS.has(systemKey) && permission) {
       grouped[systemKey].push(permission);
       return;
     }
 
-    grouped.OTHER.push(role.toUpperCase());
+    grouped.OTHER.push(normalizePermission(role));
   });
 
   return Object.fromEntries(
@@ -54,13 +58,13 @@ export function groupRolesBySystem(roles = []) {
 export function flattenPermissionGroups(grouped = {}) {
   const scopedPermissions = PERMISSION_SYSTEMS.flatMap(({ key }) =>
     (grouped[key] || [])
-      .map((permission) => String(permission || '').trim().toUpperCase())
+      .map((permission) => normalizePermission(permission))
       .filter(Boolean)
       .map((permission) => `${key}:${permission}`)
   );
 
   const legacyPermissions = (grouped.OTHER || [])
-    .map((permission) => String(permission || '').trim().toUpperCase())
+    .map((permission) => normalizePermission(permission))
     .filter(Boolean);
 
   return unique([...scopedPermissions, ...legacyPermissions]);
