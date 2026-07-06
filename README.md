@@ -178,7 +178,7 @@ permission and reporting-line views.
 - **Reporting line** (read-only): select a fixed action (`annual_leave`, `sick_leave`, `epdr`) or enter a custom action to view the mock approver chain
 
 ### Mock data
-5 seed users are inserted by `node db/setup.js` (if the `iam_users` collection is empty):
+5 seed users are upserted by `node db/setup.js` (re-running always refreshes their roles to the latest seed data):
 `U001` Alice Chan, `U002` Bob Lee, `U003` Carol Wong, `U004` David Ng, `U005` Eva Lam.
 
 ---
