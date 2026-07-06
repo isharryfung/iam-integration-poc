@@ -408,6 +408,44 @@ export default function TestReportingLine() {
                 <li>Unknown actions are accepted and typically return an empty approvers list.</li>
                 <li>If both emplid and email are provided but mismatch a 422 is returned.</li>
               </ul>
+              <p style={{ fontWeight: 600, margin: '12px 0 6px' }}>📄 Sample response from Reporting Line system</p>
+              <pre style={{
+                background: '#0f172a', color: '#e2e8f0', borderRadius: 8,
+                padding: 14, fontSize: 11, overflowX: 'auto',
+                whiteSpace: 'pre', margin: 0,
+              }}>{`{
+  "requestId": "7a7df6c2-5e8f-4d3f-a424-8fdac96d20f8",
+  "action": "epdr",
+  "requester": {
+    "emplid": "90012345",
+    "email": "user@ust.hk"
+  },
+  "resolvedAt": "2026-07-06T10:30:01+08:00",
+  "timezone": "Asia/Hong_Kong",
+  "approvers": [
+    {
+      "emplid": "80010001",
+      "email": "manager1@ust.hk",
+      "name": "Primary Manager",
+      "role": "primary_approver",
+      "level": 1,
+      "source": "reporting_line"
+    },
+    {
+      "emplid": "80010088",
+      "email": "manager2@ust.hk",
+      "name": "Division Head",
+      "role": "secondary_approver",
+      "level": 2,
+      "source": "action_config"
+    }
+  ],
+  "audit": {
+    "ruleId": "EPDR_RULE_V3",
+    "ruleVersion": "3.2.0",
+    "orgSnapshotId": "ORG_20260706_080000"
+  }
+}`}</pre>
             </div>
           )}
         </div>
