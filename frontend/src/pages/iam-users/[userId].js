@@ -2,26 +2,9 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { apiFetch } from '../../lib/api';
+import { StateBadge } from '../../lib/iamUserHelpers';
 
 const FIXED_ACTIONS = ['annual_leave', 'sick_leave', 'epdr'];
-
-const STATE_BADGE = {
-  active:    { bg: '#dcfce7', color: '#166534' },
-  inactive:  { bg: '#fee2e2', color: '#991b1b' },
-  suspended: { bg: '#fef9c3', color: '#854d0e' },
-};
-
-function StateBadge({ state }) {
-  const style = STATE_BADGE[state] || { bg: '#f1f5f9', color: '#475569' };
-  return (
-    <span style={{
-      background: style.bg, color: style.color,
-      padding: '2px 10px', borderRadius: 12, fontSize: 11, fontWeight: 600,
-    }}>
-      {state}
-    </span>
-  );
-}
 
 const CARD_STYLE = {
   background: '#f8fafc',
