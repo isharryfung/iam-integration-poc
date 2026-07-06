@@ -142,6 +142,47 @@ async function setup() {
     console.log('\n✓ Seeded source_systems with CADS, PEOPLESOFT, ECM, JSPM');
   }
 
+  // Seed mock IAM users if empty
+  const iamUsersCol = db.collection('iam_users');
+  const iamCount = await iamUsersCol.countDocuments();
+  if (iamCount === 0) {
+    const now = new Date();
+    await iamUsersCol.insertMany([
+      {
+        userId: 'U001', displayName: 'Alice Chan', email: 'alice.chan@ust.hk',
+        emplid: '90001001', department: 'ISD', jobcode: 'ITMGR',
+        roles: ['VIEWER', 'HR_MANAGER'], lifecycleState: 'active',
+        createdAt: now, updatedAt: now,
+      },
+      {
+        userId: 'U002', displayName: 'Bob Lee', email: 'bob.lee@ust.hk',
+        emplid: '90001002', department: 'Finance', jobcode: 'FINOFF',
+        roles: ['VIEWER'], lifecycleState: 'active',
+        createdAt: now, updatedAt: now,
+      },
+      {
+        userId: 'U003', displayName: 'Carol Wong', email: 'carol.wong@ust.hk',
+        emplid: '90001003', department: 'ISD', jobcode: 'SYSADM',
+        roles: ['VIEWER', 'ADMIN', 'IT_SUPPORT'], lifecycleState: 'active',
+        createdAt: now, updatedAt: now,
+      },
+      {
+        userId: 'U004', displayName: 'David Ng', email: 'david.ng@ust.hk',
+        emplid: '90001004', department: 'Research', jobcode: 'RESR',
+        roles: ['VIEWER', 'RESEARCHER'], lifecycleState: 'active',
+        createdAt: now, updatedAt: now,
+      },
+      {
+        userId: 'U005', displayName: 'Eva Lam', email: 'eva.lam@ust.hk',
+        emplid: '90001005', department: 'HR', jobcode: 'HRMGR',
+        roles: ['VIEWER', 'HR_MANAGER', 'ADMIN'], lifecycleState: 'inactive',
+        createdAt: now, updatedAt: now,
+      },
+    ]);
+    await iamUsersCol.createIndex({ userId: 1 }, { unique: true });
+    console.log('\n✓ Seeded iam_users with 5 mock users');
+  }
+
   console.log('\n✅ Database setup complete.');
   await mongoose.disconnect();
 }

@@ -45,6 +45,8 @@ The platform ingests identity events from four upstream source systems — **CAD
                                  │  · Events Search       │
                                  │  · MidPoint Preview    │
                                  │  · Test Ingest         │
+                                 │  · Reporting Line      │
+                                 │  · IAM Users           │
                                  │  · Sync Status         │
                                  │  · Access Check        │
                                  └────────────────────────┘
@@ -150,8 +152,34 @@ Default POC key: `poc-dev-key-1234`
 | `GET` | `/api/v1/users/{email}/events` | User event history |
 | `POST` | `/api/v1/users/{email}/replay` | Replay failed event |
 | `GET` | `/user/access?email={email}` | Access decision |
+| `GET` | `/api/iam/users` | List all IAM users (mock) |
+| `GET` | `/api/iam/users/{userId}` | Get IAM user details + roles |
+| `PUT` | `/api/iam/users/{userId}/permissions` | Update user roles (`{ roles: string[] }`) |
+| `GET` | `/api/iam/users/{userId}/reporting-line?action={action}` | Get mock reporting-line approver chain |
 
 Full OpenAPI spec: [`docs/openapi.yaml`](docs/openapi.yaml)
+
+---
+
+## IAM User Management (Mock)
+
+The POC includes mock IAM user management pages that simulate a real IAM system's
+permission and reporting-line views.
+
+### Frontend Routes
+
+| Route | Description |
+|-------|-------------|
+| `/iam-users` | User list — browse all users, see roles and lifecycle state |
+| `/iam-users/:userId` | User detail — view/edit permissions (roles), view read-only reporting line |
+
+### Features
+- **Permissions** (editable): add or remove roles, save via `PUT /api/iam/users/:userId/permissions`
+- **Reporting line** (read-only): select a fixed action (`annual_leave`, `sick_leave`, `epdr`) or enter a custom action to view the mock approver chain
+
+### Mock data
+5 seed users are inserted by `node db/setup.js` (if the `iam_users` collection is empty):
+`U001` Alice Chan, `U002` Bob Lee, `U003` Carol Wong, `U004` David Ng, `U005` Eva Lam.
 
 ---
 
