@@ -147,35 +147,48 @@ async function setup() {
   const iamCount = await iamUsersCol.countDocuments();
   if (iamCount === 0) {
     const now = new Date();
+    const mockPermissions = {
+      cadsProfileView: 'CADS:PROFILE_VIEW',
+      cadsOrgAdmin: 'CADS:ORG_ADMIN',
+      peoplesoftHrAdmin: 'PEOPLESOFT:HR_ADMIN',
+      peoplesoftHrManager: 'PEOPLESOFT:HR_MANAGER',
+      peoplesoftFinanceView: 'PEOPLESOFT:FINANCE_VIEW',
+      peoplesoftStudentView: 'PEOPLESOFT:STUDENT_VIEW',
+      ecmDocumentReview: 'ECM:DOCUMENT_REVIEW',
+      ecmRecordsAdmin: 'ECM:RECORDS_ADMIN',
+      jspmProjectAdmin: 'JSPM:PROJECT_ADMIN',
+      jspmProjectMember: 'JSPM:PROJECT_MEMBER',
+      jspmProjectApprover: 'JSPM:PROJECT_APPROVER',
+    };
     await iamUsersCol.insertMany([
       {
         userId: 'U001', displayName: 'Alice Chan', email: 'alice.chan@ust.hk',
         emplid: '90001001', department: 'ISD', jobcode: 'ITMGR',
-        roles: ['CADS:PROFILE_VIEW', 'PEOPLESOFT:HR_ADMIN', 'ECM:DOCUMENT_REVIEW'], lifecycleState: 'active',
+        roles: [mockPermissions.cadsProfileView, mockPermissions.peoplesoftHrAdmin, mockPermissions.ecmDocumentReview], lifecycleState: 'active',
         createdAt: now, updatedAt: now,
       },
       {
         userId: 'U002', displayName: 'Bob Lee', email: 'bob.lee@ust.hk',
         emplid: '90001002', department: 'Finance', jobcode: 'FINOFF',
-        roles: ['CADS:PROFILE_VIEW', 'PEOPLESOFT:FINANCE_VIEW'], lifecycleState: 'active',
+        roles: [mockPermissions.cadsProfileView, mockPermissions.peoplesoftFinanceView], lifecycleState: 'active',
         createdAt: now, updatedAt: now,
       },
       {
         userId: 'U003', displayName: 'Carol Wong', email: 'carol.wong@ust.hk',
         emplid: '90001003', department: 'ISD', jobcode: 'SYSADM',
-        roles: ['CADS:ORG_ADMIN', 'ECM:RECORDS_ADMIN', 'JSPM:PROJECT_ADMIN'], lifecycleState: 'active',
+        roles: [mockPermissions.cadsOrgAdmin, mockPermissions.ecmRecordsAdmin, mockPermissions.jspmProjectAdmin], lifecycleState: 'active',
         createdAt: now, updatedAt: now,
       },
       {
         userId: 'U004', displayName: 'David Ng', email: 'david.ng@ust.hk',
         emplid: '90001004', department: 'Research', jobcode: 'RESR',
-        roles: ['PEOPLESOFT:STUDENT_VIEW', 'JSPM:PROJECT_MEMBER'], lifecycleState: 'active',
+        roles: [mockPermissions.peoplesoftStudentView, mockPermissions.jspmProjectMember], lifecycleState: 'active',
         createdAt: now, updatedAt: now,
       },
       {
         userId: 'U005', displayName: 'Eva Lam', email: 'eva.lam@ust.hk',
         emplid: '90001005', department: 'HR', jobcode: 'HRMGR',
-        roles: ['CADS:PROFILE_VIEW', 'PEOPLESOFT:HR_MANAGER', 'JSPM:PROJECT_APPROVER'], lifecycleState: 'inactive',
+        roles: [mockPermissions.cadsProfileView, mockPermissions.peoplesoftHrManager, mockPermissions.jspmProjectApprover], lifecycleState: 'inactive',
         createdAt: now, updatedAt: now,
       },
     ]);

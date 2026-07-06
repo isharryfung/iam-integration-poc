@@ -237,3 +237,4 @@ router.get('/:userId/reporting-line', queryLimiter, async (req, res) => {
 module.exports = router;
 // Exported for testing
 module.exports._getMockReportingLine = getMockReportingLine;
+module.exports.getMockReportingLine = getMockReportingLine;

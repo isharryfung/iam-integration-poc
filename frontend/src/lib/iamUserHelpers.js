@@ -22,7 +22,7 @@ function unique(values = []) {
 }
 
 export function normalizePermission(value) {
-  // Mock IAM permissions are displayed and stored in uppercase for a consistent POC format.
+  // Mock IAM permissions are normalized to uppercase in the UI for consistent display and comparison.
   return String(value || '').trim().toUpperCase();
 }
 
