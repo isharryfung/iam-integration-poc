@@ -88,10 +88,41 @@ export default function TestReportingLine() {
     }
 
     try {
-      const data = await apiFetch('/api/v1/approvals/resolve', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
+      // TODO: replace mock with real apiFetch call once Reporting Line service is available.
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      const data = {
+        requestId: body.requestId,
+        action: body.action,
+        requester: {
+          emplid: body.requester.emplid ?? null,
+          email: body.requester.email ?? null,
+        },
+        resolvedAt: new Date().toISOString(),
+        timezone: body.timezone,
+        approvers: [
+          {
+            emplid: '80010001',
+            email: 'manager1@ust.hk',
+            name: 'Primary Manager',
+            role: 'primary_approver',
+            level: 1,
+            source: 'reporting_line',
+          },
+          {
+            emplid: '80010088',
+            email: 'manager2@ust.hk',
+            name: 'Division Head',
+            role: 'secondary_approver',
+            level: 2,
+            source: 'action_config',
+          },
+        ],
+        audit: {
+          ruleId: 'EPDR_RULE_V3',
+          ruleVersion: '3.2.0',
+          orgSnapshotId: `ORG_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}_080000`,
+        },
+      };
       setResult({ ok: true, data });
     } catch (err) {
       setResult({ ok: false, data: err });
