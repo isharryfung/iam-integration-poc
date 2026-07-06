@@ -9,6 +9,10 @@ const path = require('node:path');
 
 const routePath = path.resolve(__dirname, '../src/routes/iamUsers.js');
 
+test.beforeEach(() => {
+  delete require.cache[routePath];
+});
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function createMockResponse() {
@@ -33,7 +37,6 @@ function makeReq(params = {}, query = {}, body = {}) {
 // ── _getMockReportingLine ──────────────────────────────────────────────────────
 
 test('_getMockReportingLine returns 2 approvers for annual_leave', () => {
-  delete require.cache[routePath];
   const { _getMockReportingLine } = require(routePath);
   const user = { userId: 'U001', emplid: '90001001', email: 'alice@ust.hk' };
   const result = _getMockReportingLine(user, 'annual_leave');
@@ -44,7 +47,6 @@ test('_getMockReportingLine returns 2 approvers for annual_leave', () => {
 });
 
 test('_getMockReportingLine returns 1 approver for sick_leave', () => {
-  delete require.cache[routePath];
   const { _getMockReportingLine } = require(routePath);
   const user = { userId: 'U001', emplid: '90001001', email: 'alice@ust.hk' };
   const result = _getMockReportingLine(user, 'sick_leave');
@@ -52,7 +54,6 @@ test('_getMockReportingLine returns 1 approver for sick_leave', () => {
 });
 
 test('_getMockReportingLine returns 2 approvers for epdr', () => {
-  delete require.cache[routePath];
   const { _getMockReportingLine } = require(routePath);
   const user = { userId: 'U001', emplid: '90001001', email: 'alice@ust.hk' };
   const result = _getMockReportingLine(user, 'epdr');
@@ -62,7 +63,6 @@ test('_getMockReportingLine returns 2 approvers for epdr', () => {
 });
 
 test('_getMockReportingLine returns empty approvers for unknown action', () => {
-  delete require.cache[routePath];
   const { _getMockReportingLine } = require(routePath);
   const user = { userId: 'U001', emplid: '90001001', email: 'alice@ust.hk' };
   const result = _getMockReportingLine(user, 'totally_unknown_action_xyz');
@@ -75,7 +75,6 @@ test('_getMockReportingLine returns empty approvers for unknown action', () => {
 // We test the route handler logic by mocking the IamUser model.
 
 test('PUT permissions returns 400 when roles is not an array', async () => {
-  delete require.cache[routePath];
   // Patch mongoose model before loading the route
   const mongoose = require('mongoose');
   const origModel = mongoose.model.bind(mongoose);
@@ -101,7 +100,6 @@ test('PUT permissions returns 400 when roles is not an array', async () => {
 });
 
 test('PUT permissions returns 400 when roles field is missing', async () => {
-  delete require.cache[routePath];
   const router = require(routePath);
 
   const layer = router.stack.find(
@@ -118,7 +116,6 @@ test('PUT permissions returns 400 when roles field is missing', async () => {
 });
 
 test('PUT permissions returns 400 for invalid userId', async () => {
-  delete require.cache[routePath];
   const router = require(routePath);
 
   const layer = router.stack.find(
@@ -138,7 +135,6 @@ test('PUT permissions returns 400 for invalid userId', async () => {
 // ── GET /api/iam/users/:userId/reporting-line ─────────────────────────────────
 
 test('GET reporting-line returns 400 when action query param is missing', async () => {
-  delete require.cache[routePath];
   const router = require(routePath);
 
   const layer = router.stack.find(
@@ -156,7 +152,6 @@ test('GET reporting-line returns 400 when action query param is missing', async 
 });
 
 test('GET reporting-line returns 400 for invalid userId', async () => {
-  delete require.cache[routePath];
   const router = require(routePath);
 
   const layer = router.stack.find(
