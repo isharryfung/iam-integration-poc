@@ -1,0 +1,479 @@
+openapi: 3.0.3
+info:
+  title: Reporting Line Resolver API
+  version: "1.0.0"
+  description: |
+    Black-box API contract between IAM and the Reporting Line system.
+    IAM sends an action + requester identity + optional context; the Reporting Line system
+    returns the ordered approver chain for that action.
+
+    **Authentication:** OAuth2 Client Credentials (******
+    IAM obtains the token server-side; credentials are never exposed to the frontend.
+
+    **Network:** Private network only.
+    **Mode:** Synchronous response.
+
+servers:
+  - url: https://reporting-line.internal.example.com
+    description: Internal Reporting Line service
+
+tags:
+  - name: Approvals
+    description: Resolve approval chains for workforce actions
+
+paths:
+  /api/v1/approvals/resolve:
+    post:
+      summary: Resolve approver chain for an action and requester
+      description: |
+        Given an action string and requester identity, returns the ordered approver chain
+        configured for that action in the Reporting Line system.
+
+        - **Known actions** (`annual_leave`, `sick_leave`, `epdr`) return approvers as configured.
+        - **Unknown actions** are accepted and typically return an empty `approvers` list with a
+          fallback audit entry.
+        - If both `requester.emplid` and `requester.email` are provided but belong to different
+          employees, a `422 Unprocessable Entity` is returned.
+      operationId: resolveApprovers
+      tags:
+        - Approvals
+      security:
+        - oauth2ClientCredentials:
+            - approver.resolve
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveRequest'
+            examples:
+              knownAction:
+                summary: Known action — epdr
+                value:
+                  requestId: "7a7df6c2-5e8f-4d3f-a424-8fdac96d20f8"
+                  idempotencyKey: "IAM|epdr|2026Q3|90012345"
+                  action: "epdr"
+                  requester:
+                    emplid: "90012345"
+                    email: "user@ust.hk"
+                  context:
+                    department: "ISD"
+                    jobcode: "ITMGR"
+                  asOfTime: "2026-07-06T10:30:00+08:00"
+                  timezone: "Asia/Hong_Kong"
+              unknownAction:
+                summary: Unknown action — returns empty approvers
+                value:
+                  requestId: "a1b2c3d4-0000-0000-0000-000000000001"
+                  idempotencyKey: "IAM|custom_flow|2026Q3|90099999"
+                  action: "custom_flow"
+                  requester:
+                    emplid: "90099999"
+                  asOfTime: "2026-07-06T10:30:00+08:00"
+                  timezone: "Asia/Hong_Kong"
+      responses:
+        "200":
+          description: |
+            Approver chain resolved successfully. The `approvers` array may be empty if no
+            rule matched (e.g. unknown action or no applicable org hierarchy entry).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolveResponse'
+              examples:
+                withApprovers:
+                  summary: Resolved with two approvers
+                  value:
+                    requestId: "7a7df6c2-5e8f-4d3f-a424-8fdac96d20f8"
+                    action: "epdr"
+                    requester:
+                      emplid: "90012345"
+                      email: "user@ust.hk"
+                    resolvedAt: "2026-07-06T10:30:01+08:00"
+                    timezone: "Asia/Hong_Kong"
+                    approvers:
+                      - emplid: "80010001"
+                        email: "manager1@ust.hk"
+                        name: "Primary Manager"
+                        role: "primary_approver"
+                        level: 1
+                        source: "reporting_line"
+                      - emplid: "80010088"
+                        email: "manager2@ust.hk"
+                        name: "Division Head"
+                        role: "secondary_approver"
+                        level: 2
+                        source: "action_config"
+                    audit:
+                      ruleId: "EPDR_RULE_V3"
+                      ruleVersion: "3.2.0"
+                      orgSnapshotId: "ORG_20260706_080000"
+                emptyApprovers:
+                  summary: Unknown action — empty approvers
+                  value:
+                    requestId: "a1b2c3d4-0000-0000-0000-000000000001"
+                    action: "custom_flow"
+                    requester:
+                      emplid: "90099999"
+                      email: null
+                    resolvedAt: "2026-07-06T10:30:01+08:00"
+                    timezone: "Asia/Hong_Kong"
+                    approvers: []
+                    audit:
+                      ruleId: "DEFAULT_FALLBACK"
+                      ruleVersion: "1.0.0"
+                      orgSnapshotId: "ORG_20260706_080000"
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "422":
+          $ref: '#/components/responses/UnprocessableEntity'
+        "500":
+          $ref: '#/components/responses/InternalError'
+        "503":
+          $ref: '#/components/responses/ServiceUnavailable'
+
+components:
+  securitySchemes:
+    oauth2ClientCredentials:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.internal.example.com/oauth2/token
+          scopes:
+            approver.resolve: Resolve approval chain for a requester and action
+
+  schemas:
+    ResolveRequest:
+      type: object
+      description: Request payload for resolving an approver chain.
+      required:
+        - requestId
+        - idempotencyKey
+        - action
+        - requester
+        - asOfTime
+        - timezone
+      additionalProperties: false
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          description: Unique ID for this resolution request. Echoed back in the response.
+          example: "7a7df6c2-5e8f-4d3f-a424-8fdac96d20f8"
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: Stable key for dedup/retry protection.
+          example: "IAM|epdr|2026Q3|90012345"
+        action:
+          type: string
+          minLength: 1
+          description: |
+            Action string for which approvers are to be resolved.
+            Any non-empty string is accepted. Known examples: `annual_leave`, `sick_leave`, `epdr`.
+            Unknown actions are allowed and typically result in an empty approvers list.
+          example: "epdr"
+        requester:
+          $ref: '#/components/schemas/RequesterIdentity'
+        context:
+          $ref: '#/components/schemas/RequestContext'
+        asOfTime:
+          type: string
+          format: date-time
+          description: |
+            Resolve the approver chain as of this point in time.
+            Important for handling org changes. Use ISO-8601 with offset.
+          example: "2026-07-06T10:30:00+08:00"
+        timezone:
+          type: string
+          enum:
+            - Asia/Hong_Kong
+          description: Timezone for date/time interpretation.
+          example: "Asia/Hong_Kong"
+
+    RequesterIdentity:
+      type: object
+      description: |
+        Identity of the person requesting the action.
+        At least one of `emplid` or `email` must be provided.
+        If both are provided and they do not match the same employee record, a 422 is returned.
+      additionalProperties: false
+      anyOf:
+        - required:
+            - emplid
+        - required:
+            - email
+      properties:
+        emplid:
+          type: string
+          minLength: 1
+          maxLength: 20
+          description: Employee ID in HR system.
+          example: "90012345"
+        email:
+          type: string
+          format: email
+          maxLength: 320
+          description: Employee email address.
+          example: "user@ust.hk"
+
+    RequestContext:
+      type: object
+      description: Optional contextual attributes to assist rule evaluation.
+      additionalProperties: false
+      properties:
+        department:
+          type: string
+          maxLength: 100
+          description: Department code or name.
+          example: "ISD"
+        jobcode:
+          type: string
+          maxLength: 50
+          description: Job code from HR system.
+          example: "ITMGR"
+
+    ResolveResponse:
+      type: object
+      description: Resolved approver chain for the given action and requester.
+      required:
+        - requestId
+        - action
+        - requester
+        - resolvedAt
+        - timezone
+        - approvers
+        - audit
+      properties:
+        requestId:
+          type: string
+          description: Echoed from the request.
+          example: "7a7df6c2-5e8f-4d3f-a424-8fdac96d20f8"
+        action:
+          type: string
+          description: Echoed from the request.
+          example: "epdr"
+        requester:
+          type: object
+          description: Normalized requester identity echoed back.
+          properties:
+            emplid:
+              type: string
+              nullable: true
+              example: "90012345"
+            email:
+              type: string
+              nullable: true
+              example: "user@ust.hk"
+        resolvedAt:
+          type: string
+          format: date-time
+          description: Timestamp when resolution was computed.
+          example: "2026-07-06T10:30:01+08:00"
+        timezone:
+          type: string
+          description: Timezone used for resolution. Echoed from request.
+          example: "Asia/Hong_Kong"
+        approvers:
+          type: array
+          description: |
+            Ordered list of approvers for the action. Empty array if no rule matched
+            (including unknown actions that are allowed but have no configuration).
+          items:
+            $ref: '#/components/schemas/Approver'
+        audit:
+          $ref: '#/components/schemas/AuditInfo'
+
+    Approver:
+      type: object
+      description: An individual approver in the chain.
+      required:
+        - emplid
+        - email
+        - name
+        - role
+        - level
+        - source
+      properties:
+        emplid:
+          type: string
+          description: Employee ID of the approver.
+          example: "80010001"
+        email:
+          type: string
+          format: email
+          description: Email address of the approver.
+          example: "manager1@ust.hk"
+        name:
+          type: string
+          description: Display name of the approver.
+          example: "Primary Manager"
+        role:
+          type: string
+          description: |
+            Role of this approver in the chain (e.g. `primary_approver`, `secondary_approver`,
+            `department_head`). Values are defined by the Reporting Line system's action config.
+          example: "primary_approver"
+        level:
+          type: integer
+          minimum: 1
+          description: Numeric level in the approval chain (1 = first approver).
+          example: 1
+        source:
+          type: string
+          description: |
+            Source of this approver entry (e.g. `reporting_line`, `action_config`, `override`).
+          example: "reporting_line"
+
+    AuditInfo:
+      type: object
+      description: Traceability fields echoed from the Reporting Line resolution engine.
+      required:
+        - ruleId
+        - ruleVersion
+        - orgSnapshotId
+      properties:
+        ruleId:
+          type: string
+          description: Identifier of the rule set that produced this result.
+          example: "EPDR_RULE_V3"
+        ruleVersion:
+          type: string
+          description: Version of the rule set.
+          example: "3.2.0"
+        orgSnapshotId:
+          type: string
+          description: Identifier of the org hierarchy snapshot used at resolution time.
+          example: "ORG_20260706_080000"
+
+    ErrorResponse:
+      type: object
+      description: Standard error envelope returned for 4xx and 5xx responses.
+      required:
+        - error
+        - requestId
+        - timestamp
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code.
+              example: "REQUESTER_IDENTITY_MISMATCH"
+            message:
+              type: string
+              description: Human-readable error description.
+              example: "emplid and email do not belong to the same employee."
+            details:
+              type: array
+              description: Optional field-level validation details.
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                    example: "requester.emplid"
+                  issue:
+                    type: string
+                    example: "mismatch_with_requester.email"
+        requestId:
+          type: string
+          nullable: true
+          description: The requestId from the request body, if parseable.
+          example: "7a7df6c2-5e8f-4d3f-a424-8fdac96d20f8"
+        timestamp:
+          type: string
+          format: date-time
+          description: Server-side timestamp of the error.
+          example: "2026-07-06T10:30:01+08:00"
+
+  responses:
+    BadRequest:
+      description: Invalid or malformed request (missing required fields, bad JSON).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: "MISSING_FIELD"
+              message: "requestId is required"
+            requestId: null
+            timestamp: "2026-07-06T10:30:01+08:00"
+
+    Unauthorized:
+      description: Missing or invalid OAuth2 ******
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: "UNAUTHORIZED"
+              message: "Missing or invalid ******"
+            requestId: null
+            timestamp: "2026-07-06T10:30:01+08:00"
+
+    Forbidden:
+      description: Valid token but insufficient scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: "FORBIDDEN"
+              message: "Token does not have the required scope: approver.resolve"
+            requestId: null
+            timestamp: "2026-07-06T10:30:01+08:00"
+
+    UnprocessableEntity:
+      description: Business validation failed (e.g. emplid/email mismatch, invalid timezone).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: "REQUESTER_IDENTITY_MISMATCH"
+              message: "emplid and email do not belong to the same employee."
+              details:
+                - field: "requester.emplid"
+                  issue: "mismatch_with_requester.email"
+            requestId: "7a7df6c2-5e8f-4d3f-a424-8fdac96d20f8"
+            timestamp: "2026-07-06T10:30:01+08:00"
+
+    InternalError:
+      description: Unexpected internal server error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: "INTERNAL_ERROR"
+              message: "An unexpected error occurred"
+            requestId: "7a7df6c2-5e8f-4d3f-a424-8fdac96d20f8"
+            timestamp: "2026-07-06T10:30:01+08:00"
+
+    ServiceUnavailable:
+      description: Reporting Line service or a dependency is temporarily unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: "SERVICE_UNAVAILABLE"
+              message: "Reporting Line service is temporarily unavailable"
+            requestId: "7a7df6c2-5e8f-4d3f-a424-8fdac96d20f8"
+            timestamp: "2026-07-06T10:30:01+08:00"

@@ -7,6 +7,7 @@ const inboundRoutes = require('./routes/inbound');
 const midpointRoutes = require('./routes/midpoint');
 const userRoutes = require('./routes/users');
 const accessRoutes = require('./routes/access');
+const reportingLineRoutes = require('./routes/reportingLine');
 const { apiKeyMiddleware } = require('./middleware/apiKey');
 const { correlationMiddleware } = require('./middleware/correlation');
 
@@ -24,6 +25,7 @@ app.use('/api/v1/inbound', inboundRoutes);
 app.use('/api/v1/midpoint', midpointRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use('/user', accessRoutes);
+app.use('/api/v1/approvals', reportingLineRoutes);
 
 // ── 404 / error handlers ────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));

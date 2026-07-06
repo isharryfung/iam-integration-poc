@@ -6,6 +6,7 @@ const NAV_ITEMS = [
   { href: '/events', label: '🔍 Events Search' },
   { href: '/midpoint-preview', label: '🪞 MidPoint Preview' },
   { href: '/ingest', label: '📤 Test Ingest' },
+  { href: '/test-reporting-line', label: '🔗 Reporting Line' },
   { href: '/sync-status', label: '🔄 Sync Status' },
   { href: '/access', label: '🔑 Access Check' },
 ];
