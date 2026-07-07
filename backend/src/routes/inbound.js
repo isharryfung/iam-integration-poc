@@ -275,7 +275,7 @@ router.post('/ecm/preview', queryLimiter, async (req, res) => {
 // ── Source-specific alias routes (all route to the same ingest handler) ──────
 router.post('/cads',       ingestLimiter, setSource('CADS'),       handleCadsIngest);
 router.post('/peoplesoft', ingestLimiter, setSource('PEOPLESOFT'), handleSingleIngest);
-router.post('/ecm',        ingestLimiter, setSource('ECM'),        handleSingleIngest);
+router.post('/ecm',        ingestLimiter, setSource('ECM'),        handleEcmIngest);
 router.post('/jspm',       ingestLimiter, setSource('JSPM'),       handleJspmIngest);
 
 /**
@@ -515,6 +515,121 @@ async function handleCadsIngest(req, res) {
     jobId,
     status: event.status,
     correlationId,
+  });
+}
+
+/**
+ * Detect whether a request body is a raw ECM batch payload
+ * ({ membershipRows: [...], groupItemRows: [...] }).
+ * Canonical payloads and flat single-user ECM payloads are handled separately.
+ */
+function isEcmRawBatch(body) {
+  if (!body || typeof body !== 'object') return false;
+  if (body.meta || body.identity || body.entitlement) return false;
+  return Array.isArray(body.membershipRows) || Array.isArray(body.groupItemRows);
+}
+
+/**
+ * ECM-specific ingestion handler.
+ * Accepts either:
+ *   a) Raw ECM batch  { membershipRows: [...], groupItemRows: [...] }
+ *      → transformed via buildEcmCombinedPayloads; one event created per user.
+ *   b) Canonical ECM payload / flat single-user ECM JSON
+ *      → passed through to the standard single-event ingest path.
+ */
+async function handleEcmIngest(req, res) {
+  const start = Date.now();
+  const correlationId = req.correlationId;
+  const sourceSystem = req.headers['x-source-system'];
+  const idempotencyKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'];
+
+  if (!isEcmRawBatch(req.body)) {
+    // Canonical or flat single-user payload — reuse existing single-event path
+    return handleSingleIngest(req, res);
+  }
+
+  const body = req.body;
+  const membershipRows = Array.isArray(body.membershipRows) ? body.membershipRows : [];
+  const groupItemRows  = Array.isArray(body.groupItemRows)  ? body.groupItemRows  : [];
+
+  const { combined, diagnostics } = buildEcmCombinedPayloads(membershipRows, groupItemRows, {
+    correlationId,
+  });
+
+  if (combined.length === 0) {
+    return res.status(400).json({
+      error: 'No valid ECM users found in membershipRows — check that USERNAME and USERGROUPNAME are present',
+      diagnostics,
+    });
+  }
+
+  const jobId = uuidv4();
+
+  const job = await IngestionJob.create({
+    jobId,
+    jobType: 'batch',
+    sourceSystem,
+    correlationId,
+    idempotencyKey,
+    totalEvents: combined.length,
+    rawPayload: req.body,
+  });
+
+  const accepted = [];
+  const rejected = [];
+
+  for (const entry of combined) {
+    if (!entry.isValid) {
+      rejected.push({ username: entry.username, reason: entry.errors.join('; ') });
+      continue;
+    }
+    try {
+      const perUserKey = idempotencyKey
+        ? `${idempotencyKey}|${entry.username}`
+        : entry.payload.meta && entry.payload.meta.idempotencyKey;
+      const { event, duplicate } = await ingestEvent(
+        entry.payload,
+        sourceSystem,
+        correlationId,
+        perUserKey,
+        jobId
+      );
+      accepted.push({ username: entry.username, eventId: event.eventId, status: event.status, duplicate });
+    } catch (err) {
+      rejected.push({ username: entry.username, reason: err.message });
+    }
+  }
+
+  await IngestionJob.findByIdAndUpdate(job._id, {
+    $set: {
+      status: rejected.length > 0 ? (accepted.length > 0 ? 'partial_failure' : 'failed') : 'done',
+      acceptedEvents: accepted.length,
+      rejectedEvents: rejected.length,
+      eventIds: accepted.map(a => a.eventId),
+      errors: rejected,
+      completedAt: new Date(),
+    },
+  });
+
+  await writeAudit({
+    correlationId,
+    actor: { type: 'api_client', apiKeyId: req.apiKeyId },
+    action: 'ingest_batch',
+    resource: { type: 'ingestion_job', id: jobId },
+    outcome: rejected.length === combined.length ? 'failure' : rejected.length > 0 ? 'partial' : 'success',
+    httpStatus: 202,
+    durationMs: Date.now() - start,
+    metadata: { total: combined.length, accepted: accepted.length, rejected: rejected.length },
+  });
+
+  return res.status(202).json({
+    message: 'ECM batch accepted',
+    jobId,
+    correlationId,
+    summary: { total: combined.length, accepted: accepted.length, rejected: rejected.length },
+    accepted,
+    rejected,
+    diagnostics,
   });
 }
 

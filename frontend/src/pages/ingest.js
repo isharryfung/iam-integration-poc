@@ -551,22 +551,67 @@ export default function TestIngest() {
 
       {result && (
         <div style={{ background: '#d1fae5', color: '#065f46', padding: 16, borderRadius: 8, marginTop: 16 }}>
-          <p style={{ fontWeight: 600, marginBottom: 8 }}>✅ Event Accepted!</p>
-          <table style={{ fontSize: 13 }}>
-            <tbody>
-              {[
-                ['Event ID', result.eventId],
-                ['Job ID', result.jobId],
-                ['Status', result.status],
-                ['Correlation ID', result.correlationId],
-              ].map(([k, v]) => (
-                <tr key={k}>
-                  <td style={{ fontWeight: 600, paddingRight: 16, paddingBottom: 4 }}>{k}</td>
-                  <td style={{ fontFamily: 'monospace' }}>{v}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {result.accepted ? (
+            <>
+              <p style={{ fontWeight: 600, marginBottom: 8 }}>
+                ✅ ECM Batch Accepted — {result.summary.accepted} of {result.summary.total} user(s)
+              </p>
+              <table style={{ fontSize: 13 }}>
+                <tbody>
+                  {[
+                    ['Job ID', result.jobId],
+                    ['Correlation ID', result.correlationId],
+                  ].map(([k, v]) => (
+                    <tr key={k}>
+                      <td style={{ fontWeight: 600, paddingRight: 16, paddingBottom: 4 }}>{k}</td>
+                      <td style={{ fontFamily: 'monospace' }}>{v}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {result.accepted.length > 0 && (
+                <div style={{ marginTop: 10 }}>
+                  <p style={{ fontWeight: 600, fontSize: 12, marginBottom: 4 }}>Accepted users:</p>
+                  <ul style={{ fontSize: 12, margin: 0, paddingLeft: 18 }}>
+                    {result.accepted.map(a => (
+                      <li key={a.eventId} style={{ fontFamily: 'monospace' }}>
+                        {a.username} — event <strong>{a.eventId}</strong>{a.duplicate ? ' (duplicate)' : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {result.rejected && result.rejected.length > 0 && (
+                <div style={{ marginTop: 10, color: '#92400e' }}>
+                  <p style={{ fontWeight: 600, fontSize: 12, marginBottom: 4 }}>Rejected users:</p>
+                  <ul style={{ fontSize: 12, margin: 0, paddingLeft: 18 }}>
+                    {result.rejected.map((r, i) => (
+                      <li key={i}>{r.username}: {r.reason}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <p style={{ fontWeight: 600, marginBottom: 8 }}>✅ Event Accepted!</p>
+              <table style={{ fontSize: 13 }}>
+                <tbody>
+                  {[
+                    ['Event ID', result.eventId],
+                    ['Job ID', result.jobId],
+                    ['Status', result.status],
+                    ['Correlation ID', result.correlationId],
+                  ].map(([k, v]) => (
+                    <tr key={k}>
+                      <td style={{ fontWeight: 600, paddingRight: 16, paddingBottom: 4 }}>{k}</td>
+                      <td style={{ fontFamily: 'monospace' }}>{v}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
           <p style={{ marginTop: 8, fontSize: 12 }}>
             → Go to <a href="/events" style={{ textDecoration: 'underline' }}>Events Search</a> to
             track this event or check <a href="/sync-status" style={{ textDecoration: 'underline' }}>Sync Status</a>.
