@@ -154,3 +154,71 @@ test('normalizePayload JSPM: canonical payload extracts email correctly', () => 
   const errors = validateEvent(result);
   assert.deepEqual(errors, []);
 });
+
+// ── validateMidpointInput (midpointPreview) ───────────────────────────────────
+
+const { validateMidpointInput } = require('../src/utils/midpointPreview');
+
+test('validateMidpointInput ECM: combined payload with groupEntitlements passes without documentClass', () => {
+  const input = {
+    meta: {
+      eventId:        'ECM-COMBINED-ARIVY-2025-01-01T00:00:00.000Z',
+      eventTime:      '2025-01-01T00:00:00.000Z',
+      sourceSystem:   'ECM',
+      correlationId:  'corr-001',
+      idempotencyKey: 'ECM|COMBINED|ARIVY',
+      operation:      'ASSIGN_ENTITLEMENT',
+    },
+    identity: {
+      email:       'arivy@ust.hk',
+      displayName: 'ARIVY',
+      userType:    'staff',
+      staffId:     null,
+      studentId:   null,
+    },
+    entitlement: {
+      application: 'ECM',
+      action:      'sync',
+      roleName:    'ECM',
+      documentClass: null,
+    },
+    attributes: {
+      groupEntitlements: [
+        { groupName: 'AR_All_Docs', resourceType: 'DOCUMENT_TYPE', resourceName: 'AR: Academic Transcript' },
+      ],
+    },
+  };
+  const result = validateMidpointInput(input);
+  assert.equal(result.isValid, true, `Expected valid but got errors: ${JSON.stringify(result.errors)}`);
+  assert.equal(result.status, 'pass');
+  assert.ok(!result.errors.some(e => e.field === 'entitlement.documentClass'));
+});
+
+test('validateMidpointInput ECM: single-document payload without documentClass still fails', () => {
+  const input = {
+    meta: {
+      eventId:        'EVT-001',
+      eventTime:      '2025-01-01T00:00:00.000Z',
+      sourceSystem:   'ECM',
+      correlationId:  null,
+      idempotencyKey: null,
+      operation:      'ASSIGN_ENTITLEMENT',
+    },
+    identity: {
+      email:       'user@ust.hk',
+      displayName: null,
+      userType:    'staff',
+      staffId:     null,
+      studentId:   null,
+    },
+    entitlement: {
+      application:   'ECM',
+      action:        'provision',
+      roleName:      'DocReader',
+      documentClass: null,
+    },
+  };
+  const result = validateMidpointInput(input);
+  assert.equal(result.isValid, false);
+  assert.ok(result.errors.some(e => e.field === 'entitlement.documentClass'));
+});
