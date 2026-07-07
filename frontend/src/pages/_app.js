@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { href: '/midpoint-preview', label: '🪞 MidPoint Preview' },
   { href: '/ingest', label: '📤 Test Ingest' },
   { href: '/test-reporting-line', label: '🔗 Reporting Line' },
+  { href: '/iam-users', label: '👥 IAM Users' },
   { href: '/sync-status', label: '🔄 Sync Status' },
   { href: '/access', label: '🔑 Access Check' },
 ];
