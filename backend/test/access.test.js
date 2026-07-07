@@ -1,0 +1,182 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const path = require('node:path');
+
+const accessRoutePath = path.resolve(__dirname, '../src/routes/access.js');
+
+function loadModuleWithMocks(modulePath, mocks) {
+  const originalEntries = new Map();
+
+  for (const [request, mockExports] of Object.entries(mocks)) {
+    const resolved = require.resolve(request, { paths: [path.dirname(modulePath)] });
+    originalEntries.set(resolved, require.cache[resolved]);
+    require.cache[resolved] = {
+      id: resolved,
+      filename: resolved,
+      loaded: true,
+      exports: mockExports,
+    };
+  }
+
+  delete require.cache[modulePath];
+
+  try {
+    return require(modulePath);
+  } finally {
+    delete require.cache[modulePath];
+
+    for (const [resolved, originalEntry] of originalEntries.entries()) {
+      if (originalEntry) {
+        require.cache[resolved] = originalEntry;
+      } else {
+        delete require.cache[resolved];
+      }
+    }
+  }
+}
+
+function getRouteHandler(router, routePath) {
+  const layer = router.stack.find((entry) => entry.route && entry.route.path === routePath);
+  assert.ok(layer, `expected route ${routePath} to exist`);
+  return layer.route.stack[layer.route.stack.length - 1].handle;
+}
+
+function createMockResponse() {
+  return {
+    statusCode: 200,
+    body: undefined,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload) {
+      this.body = payload;
+      return this;
+    },
+  };
+}
+
+function makeReq(email, serviceId = 'ECM') {
+  return {
+    headers: { service_id: serviceId },
+    query: { email },
+    correlationId: `corr-${serviceId.toLowerCase()}`,
+    apiKeyId: 'test-key',
+  };
+}
+
+function createAccessHandler({ identities, events }) {
+  const router = loadModuleWithMocks(accessRoutePath, {
+    '../models/IdentityLink': {
+      findOne: async ({ canonicalEmail }) => identities[canonicalEmail] || null,
+    },
+    '../models/InboundEvent': {
+      findOne: async (query) => {
+        const email = query['identity.email'];
+        const scope = query['entitlement.targetSystem'] && query['entitlement.targetSystem'].$in;
+        const byEmail = events
+          .filter((event) => event.identity.email === email && event.status === query.status);
+        if (!Array.isArray(scope)) return byEmail[0] || null;
+        return byEmail.find((event) => scope.includes(event.entitlement.targetSystem)) || null;
+      },
+    },
+    '../utils/audit': {
+      writeAudit: async () => {},
+    },
+  });
+
+  return getRouteHandler(router, '/access');
+}
+
+test('regression: users from any source system are denied for unrelated target systems', async () => {
+  const identities = {
+    'ps.user@ust.hk': { canonicalEmail: 'ps.user@ust.hk', lifecycleState: 'active', sourceSystems: ['PEOPLESOFT'] },
+    'ecm.user@ust.hk': { canonicalEmail: 'ecm.user@ust.hk', lifecycleState: 'active', sourceSystems: ['ECM'] },
+    'cads.user@ust.hk': { canonicalEmail: 'cads.user@ust.hk', lifecycleState: 'active', sourceSystems: ['CADS'] },
+    'jspm.user@ust.hk': { canonicalEmail: 'jspm.user@ust.hk', lifecycleState: 'active', sourceSystems: ['JSPM'] },
+  };
+
+  const events = [
+    { status: 'success', identity: { email: 'ps.user@ust.hk' }, entitlement: { targetSystem: 'PEOPLESOFT', action: 'provision', role: 'PS_USER' } },
+    { status: 'success', identity: { email: 'ecm.user@ust.hk' }, entitlement: { targetSystem: 'ECM', action: 'provision', role: 'ECM_USER' } },
+    { status: 'success', identity: { email: 'cads.user@ust.hk' }, entitlement: { targetSystem: 'CADS', action: 'provision', role: 'CADS_USER' } },
+    { status: 'success', identity: { email: 'jspm.user@ust.hk' }, entitlement: { targetSystem: 'JSPM', action: 'provision', role: 'JSPM_USER' } },
+  ];
+
+  const handler = createAccessHandler({ identities, events });
+  const checks = [
+    ['ps.user@ust.hk', 'ECM'],
+    ['ecm.user@ust.hk', 'CADS'],
+    ['cads.user@ust.hk', 'JSPM'],
+    ['jspm.user@ust.hk', 'PEOPLESOFT'],
+  ];
+
+  for (const [email, serviceId] of checks) {
+    const res = createMockResponse();
+    await handler(makeReq(email, serviceId), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.decision, 'DENY');
+    assert.equal(res.body.validity.isNowValid, false);
+  }
+});
+
+test('PeopleSoft-only entitlements cannot access ECM, CADS, or JSPM', async () => {
+  const identities = {
+    'ps.only@ust.hk': { canonicalEmail: 'ps.only@ust.hk', lifecycleState: 'active', sourceSystems: ['PEOPLESOFT'] },
+  };
+  const events = [
+    { status: 'success', identity: { email: 'ps.only@ust.hk' }, entitlement: { targetSystem: 'PEOPLESOFT', action: 'provision', role: 'PS_USER' } },
+  ];
+
+  const handler = createAccessHandler({ identities, events });
+  const deniedServices = ['ECM', 'CADS', 'JSPM'];
+
+  for (const serviceId of deniedServices) {
+    const res = createMockResponse();
+    await handler(makeReq('ps.only@ust.hk', serviceId), res);
+    assert.equal(res.body.decision, 'DENY');
+  }
+});
+
+test('ECM-only entitlements cannot access PEOPLESOFT, CADS, or JSPM', async () => {
+  const identities = {
+    'ecm.only@ust.hk': { canonicalEmail: 'ecm.only@ust.hk', lifecycleState: 'active', sourceSystems: ['ECM'] },
+  };
+  const events = [
+    { status: 'success', identity: { email: 'ecm.only@ust.hk' }, entitlement: { targetSystem: 'ECM', action: 'provision', role: 'ECM_USER' } },
+  ];
+
+  const handler = createAccessHandler({ identities, events });
+  const deniedServices = ['PEOPLESOFT', 'CADS', 'JSPM'];
+
+  for (const serviceId of deniedServices) {
+    const res = createMockResponse();
+    await handler(makeReq('ecm.only@ust.hk', serviceId), res);
+    assert.equal(res.body.decision, 'DENY');
+  }
+});
+
+test('allows access only when requested system has matching entitlement (with safe key normalization)', async () => {
+  const identities = {
+    'ecm.allow@ust.hk': { canonicalEmail: 'ecm.allow@ust.hk', lifecycleState: 'active', sourceSystems: ['ECM'] },
+    'ps.module@ust.hk': { canonicalEmail: 'ps.module@ust.hk', lifecycleState: 'active', sourceSystems: ['PEOPLESOFT'] },
+  };
+  const events = [
+    { status: 'success', identity: { email: 'ecm.allow@ust.hk' }, entitlement: { targetSystem: 'ECM', action: 'provision', role: 'ECM_ADMIN' } },
+    { status: 'success', identity: { email: 'ps.module@ust.hk' }, entitlement: { targetSystem: 'FMS', action: 'sync', role: 'FMS_USER' } },
+  ];
+
+  const handler = createAccessHandler({ identities, events });
+
+  const ecmRes = createMockResponse();
+  await handler(makeReq('ecm.allow@ust.hk', 'eCm'), ecmRes);
+  assert.equal(ecmRes.body.decision, 'ALLOW');
+  assert.equal(ecmRes.body.serviceId, 'ECM');
+  assert.equal(ecmRes.body.attributes.role, 'ECM_ADMIN');
+
+  const peopleSoftRes = createMockResponse();
+  await handler(makeReq('ps.module@ust.hk', 'people-soft'), peopleSoftRes);
+  assert.equal(peopleSoftRes.body.decision, 'ALLOW');
+  assert.equal(peopleSoftRes.body.serviceId, 'PEOPLESOFT');
+  assert.equal(peopleSoftRes.body.attributes.role, 'FMS_USER');
+});
