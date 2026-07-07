@@ -7,9 +7,12 @@ const { writeAudit } = require('../utils/audit');
 const { queryLimiter } = require('../middleware/rateLimiter');
 
 const SERVICE_KEY_ALIASES = {
-  'PEOPLE SOFT': 'PEOPLESOFT',
-  'PEOPLE-SOFT': 'PEOPLESOFT',
-  PEOPLE_SOFT: 'PEOPLESOFT',
+  ECM: 'ECM',
+  CADS: 'CADS',
+  JSPM: 'JSPM',
+  PEOPLESOFT: 'PEOPLESOFT',
+  PORTAL: 'PORTAL',
+  VPN: 'VPN',
 };
 
 const ENTITLEMENT_SCOPE_BY_SERVICE = {
@@ -17,6 +20,8 @@ const ENTITLEMENT_SCOPE_BY_SERVICE = {
   CADS: ['CADS'],
   JSPM: ['JSPM'],
   PEOPLESOFT: ['PEOPLESOFT', 'SIS', 'FMS', 'HRMS'],
+  PORTAL: ['PORTAL'],
+  VPN: ['VPN'],
 };
 
 const ALLOW_ACTIONS = new Set(['provision', 'update', 'sync']);
@@ -25,7 +30,8 @@ function normalizeSystemKey(value) {
   const safe = toSafeString(value);
   if (!safe) return null;
   const upper = safe.toUpperCase();
-  return SERVICE_KEY_ALIASES[upper] || upper;
+  const compact = upper.replace(/[\s_.-]+/g, '');
+  return SERVICE_KEY_ALIASES[compact] || null;
 }
 
 function getEntitlementScope(serviceId) {
@@ -59,7 +65,7 @@ router.get('/access', queryLimiter, async (req, res) => {
   const serviceId = normalizeSystemKey(rawServiceId);
 
   if (!serviceId) {
-    return res.status(400).json({ error: 'Missing service_id header or query parameter' });
+    return res.status(400).json({ error: 'Missing or invalid service_id header or query parameter' });
   }
 
   // Resolve email: query param > header — sanitize to plain string

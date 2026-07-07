@@ -56,7 +56,7 @@ function createMockResponse() {
   };
 }
 
-function makeReq(email, serviceId = 'ECM') {
+function createMockRequest(email, serviceId) {
   return {
     headers: { service_id: serviceId },
     query: { email },
@@ -113,7 +113,7 @@ test('regression: users from any source system are denied for unrelated target s
 
   for (const [email, serviceId] of checks) {
     const res = createMockResponse();
-    await handler(makeReq(email, serviceId), res);
+    await handler(createMockRequest(email, serviceId), res);
     assert.equal(res.statusCode, 200);
     assert.equal(res.body.decision, 'DENY');
     assert.equal(res.body.validity.isNowValid, false);
@@ -133,7 +133,7 @@ test('PeopleSoft-only entitlements cannot access ECM, CADS, or JSPM', async () =
 
   for (const serviceId of deniedServices) {
     const res = createMockResponse();
-    await handler(makeReq('ps.only@ust.hk', serviceId), res);
+    await handler(createMockRequest('ps.only@ust.hk', serviceId), res);
     assert.equal(res.body.decision, 'DENY');
   }
 });
@@ -151,7 +151,7 @@ test('ECM-only entitlements cannot access PEOPLESOFT, CADS, or JSPM', async () =
 
   for (const serviceId of deniedServices) {
     const res = createMockResponse();
-    await handler(makeReq('ecm.only@ust.hk', serviceId), res);
+    await handler(createMockRequest('ecm.only@ust.hk', serviceId), res);
     assert.equal(res.body.decision, 'DENY');
   }
 });
@@ -159,24 +159,47 @@ test('ECM-only entitlements cannot access PEOPLESOFT, CADS, or JSPM', async () =
 test('allows access only when requested system has matching entitlement (with safe key normalization)', async () => {
   const identities = {
     'ecm.allow@ust.hk': { canonicalEmail: 'ecm.allow@ust.hk', lifecycleState: 'active', sourceSystems: ['ECM'] },
+    'ecm.update@ust.hk': { canonicalEmail: 'ecm.update@ust.hk', lifecycleState: 'active', sourceSystems: ['ECM'] },
     'ps.module@ust.hk': { canonicalEmail: 'ps.module@ust.hk', lifecycleState: 'active', sourceSystems: ['PEOPLESOFT'] },
   };
   const events = [
     { status: 'success', identity: { email: 'ecm.allow@ust.hk' }, entitlement: { targetSystem: 'ECM', action: 'provision', role: 'ECM_ADMIN' } },
+    { status: 'success', identity: { email: 'ecm.update@ust.hk' }, entitlement: { targetSystem: 'ECM', action: 'update', role: 'ECM_UPDATER' } },
+    // FMS is treated as a PeopleSoft module and is allowed when requesting PEOPLESOFT.
     { status: 'success', identity: { email: 'ps.module@ust.hk' }, entitlement: { targetSystem: 'FMS', action: 'sync', role: 'FMS_USER' } },
   ];
 
   const handler = createAccessHandler({ identities, events });
 
   const ecmRes = createMockResponse();
-  await handler(makeReq('ecm.allow@ust.hk', 'eCm'), ecmRes);
+  await handler(createMockRequest('ecm.allow@ust.hk', 'eCm'), ecmRes);
   assert.equal(ecmRes.body.decision, 'ALLOW');
   assert.equal(ecmRes.body.serviceId, 'ECM');
   assert.equal(ecmRes.body.attributes.role, 'ECM_ADMIN');
 
+  const ecmUpdateRes = createMockResponse();
+  await handler(createMockRequest('ecm.update@ust.hk', 'ECM'), ecmUpdateRes);
+  assert.equal(ecmUpdateRes.body.decision, 'ALLOW');
+  assert.equal(ecmUpdateRes.body.attributes.role, 'ECM_UPDATER');
+
   const peopleSoftRes = createMockResponse();
-  await handler(makeReq('ps.module@ust.hk', 'people-soft'), peopleSoftRes);
+  await handler(createMockRequest('ps.module@ust.hk', 'people-soft'), peopleSoftRes);
   assert.equal(peopleSoftRes.body.decision, 'ALLOW');
   assert.equal(peopleSoftRes.body.serviceId, 'PEOPLESOFT');
   assert.equal(peopleSoftRes.body.attributes.role, 'FMS_USER');
+});
+
+test('returns 400 for unknown service_id values', async () => {
+  const identities = {
+    'known.user@ust.hk': { canonicalEmail: 'known.user@ust.hk', lifecycleState: 'active', sourceSystems: ['ECM'] },
+  };
+  const events = [
+    { status: 'success', identity: { email: 'known.user@ust.hk' }, entitlement: { targetSystem: 'ECM', action: 'provision', role: 'ECM_USER' } },
+  ];
+
+  const handler = createAccessHandler({ identities, events });
+  const res = createMockResponse();
+  await handler(createMockRequest('known.user@ust.hk', 'unknown-system'), res);
+  assert.equal(res.statusCode, 400);
+  assert.match(res.body.error, /invalid service_id/i);
 });
