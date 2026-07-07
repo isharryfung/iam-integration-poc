@@ -49,10 +49,10 @@ test('normalizePayload ECM: canonical combined payload passes validation', () =>
   assert.deepEqual(errors, []);
 });
 
-test('normalizePayload ECM: canonical payload action defaults to provision when meta.operation present', () => {
+test('normalizePayload ECM: unknown meta.operation is normalised to sync', () => {
   const result = normalizePayload(ecmCombinedPayload, 'ECM', 'corr-001', 'idem-001');
-  // 'UPSERT_USER_EFFECTIVE_ACCESS' is not in validActions; defaults to 'sync'
-  assert.ok(['provision', 'sync'].includes(result.entitlement.action));
+  // 'UPSERT_USER_EFFECTIVE_ACCESS' is not in the valid-action enum, so it falls back to 'sync'
+  assert.equal(result.entitlement.action, 'sync');
 });
 
 // ── ECM raw batch payload ({ membershipRows, groupItemRows }) ──────────────────

@@ -586,7 +586,7 @@ async function handleEcmIngest(req, res) {
     try {
       const perUserKey = idempotencyKey
         ? `${idempotencyKey}|${entry.username}`
-        : entry.payload.meta && entry.payload.meta.idempotencyKey;
+        : entry.payload.meta?.idempotencyKey;
       const { event, duplicate } = await ingestEvent(
         entry.payload,
         sourceSystem,
