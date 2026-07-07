@@ -65,6 +65,13 @@ function createMockRequest(email, serviceId) {
   };
 }
 
+function matchesQueryBranch(event, branch) {
+  const scoped = branch['entitlement.targetSystem'] && branch['entitlement.targetSystem'].$in;
+  if (Array.isArray(scoped) && scoped.includes(event.entitlement.targetSystem)) return true;
+  if (branch.sourceSystem) return event.sourceSystem === branch.sourceSystem;
+  return false;
+}
+
 function createAccessHandler({ identities, events }) {
   const router = loadModuleWithMocks(accessRoutePath, {
     '../models/IdentityLink': {
@@ -76,12 +83,7 @@ function createAccessHandler({ identities, events }) {
         const byEmail = events
           .filter((event) => event.identity.email === email && event.status === query.status);
         if (Array.isArray(query.$or)) {
-          return byEmail.find((event) => query.$or.some((branch) => {
-            const scoped = branch['entitlement.targetSystem'] && branch['entitlement.targetSystem'].$in;
-            if (Array.isArray(scoped) && scoped.includes(event.entitlement.targetSystem)) return true;
-            if (branch.sourceSystem) return event.sourceSystem === branch.sourceSystem;
-            return false;
-          })) || null;
+          return byEmail.find((event) => query.$or.some((branch) => matchesQueryBranch(event, branch))) || null;
         }
         const scope = query['entitlement.targetSystem'] && query['entitlement.targetSystem'].$in;
         if (!Array.isArray(scope)) return byEmail[0] || null;
@@ -252,4 +254,103 @@ test('returns 400 when using PeopleSoft module key directly as service_id', asyn
   await handler(createMockRequest('ps.module@ust.hk', 'FMS'), res);
   assert.equal(res.statusCode, 400);
   assert.match(res.body.error, /invalid service_id/i);
+});
+
+test('normalizes service key formats for PEOPLESOFT variants', async () => {
+  const identities = {
+    'ps.variant@ust.hk': { canonicalEmail: 'ps.variant@ust.hk', lifecycleState: 'active', sourceSystems: ['PEOPLESOFT'] },
+  };
+  const events = [
+    { status: 'success', identity: { email: 'ps.variant@ust.hk' }, entitlement: { targetSystem: 'FMS', action: 'provision', role: 'FMS_USER' } },
+  ];
+
+  const handler = createAccessHandler({ identities, events });
+  const variants = ['people-soft', 'People Soft', 'PEOPLE.SOFT'];
+  for (const variant of variants) {
+    const res = createMockResponse();
+    await handler(createMockRequest('ps.variant@ust.hk', variant), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.serviceId, 'PEOPLESOFT');
+    assert.equal(res.body.decision, 'ALLOW');
+  }
+});
+
+test('denies access when entitlement validFrom is in the future', async () => {
+  const identities = {
+    'future.user@ust.hk': { canonicalEmail: 'future.user@ust.hk', lifecycleState: 'active', sourceSystems: ['ECM'] },
+  };
+  const events = [
+    {
+      status: 'success',
+      identity: { email: 'future.user@ust.hk' },
+      entitlement: { targetSystem: 'ECM', action: 'provision', role: 'ECM_USER', validFrom: '2999-01-01T00:00:00.000Z' },
+    },
+  ];
+
+  const handler = createAccessHandler({ identities, events });
+  const res = createMockResponse();
+  await handler(createMockRequest('future.user@ust.hk', 'ECM'), res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.decision, 'DENY');
+  assert.equal(res.body.validity.isNowValid, false);
+});
+
+test('denies access when entitlement validUntil is in the past', async () => {
+  const identities = {
+    'expired.user@ust.hk': { canonicalEmail: 'expired.user@ust.hk', lifecycleState: 'active', sourceSystems: ['ECM'] },
+  };
+  const events = [
+    {
+      status: 'success',
+      identity: { email: 'expired.user@ust.hk' },
+      entitlement: { targetSystem: 'ECM', action: 'provision', role: 'ECM_USER', validUntil: '2000-01-01T00:00:00.000Z' },
+    },
+  ];
+
+  const handler = createAccessHandler({ identities, events });
+  const res = createMockResponse();
+  await handler(createMockRequest('expired.user@ust.hk', 'ECM'), res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.decision, 'DENY');
+  assert.equal(res.body.validity.isNowValid, false);
+});
+
+test('denies access when entitlement validity dates are invalid', async () => {
+  const identities = {
+    'invalid.date@ust.hk': { canonicalEmail: 'invalid.date@ust.hk', lifecycleState: 'active', sourceSystems: ['ECM'] },
+  };
+  const events = [
+    {
+      status: 'success',
+      identity: { email: 'invalid.date@ust.hk' },
+      entitlement: { targetSystem: 'ECM', action: 'provision', role: 'ECM_USER', validFrom: 'not-a-date' },
+    },
+  ];
+
+  const handler = createAccessHandler({ identities, events });
+  const res = createMockResponse();
+  await handler(createMockRequest('invalid.date@ust.hk', 'ECM'), res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.decision, 'DENY');
+  assert.equal(res.body.validity.isNowValid, false);
+});
+
+test('allows access when entitlement has no validity window', async () => {
+  const identities = {
+    'open.validity@ust.hk': { canonicalEmail: 'open.validity@ust.hk', lifecycleState: 'active', sourceSystems: ['ECM'] },
+  };
+  const events = [
+    {
+      status: 'success',
+      identity: { email: 'open.validity@ust.hk' },
+      entitlement: { targetSystem: 'ECM', action: 'provision', role: 'ECM_USER', validFrom: null, validUntil: null },
+    },
+  ];
+
+  const handler = createAccessHandler({ identities, events });
+  const res = createMockResponse();
+  await handler(createMockRequest('open.validity@ust.hk', 'ECM'), res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.decision, 'ALLOW');
+  assert.equal(res.body.validity.isNowValid, true);
 });
