@@ -86,15 +86,20 @@ router.get('/access', queryLimiter, async (req, res) => {
 
   // Get the most recent successful event for this user that matches the requested service scope.
   const scope = getEntitlementScope(serviceId);
-  const scopedEvent = await InboundEvent.findOne(
-    {
-      'identity.email': String(email),
-      status: 'success',
-      'entitlement.targetSystem': { $in: scope },
-    },
-    null,
-    { sort: { createdAt: -1 } }
-  );
+  const scopedEventQuery = {
+    'identity.email': String(email),
+    status: 'success',
+  };
+  if (serviceId === 'PEOPLESOFT') {
+    scopedEventQuery.$or = [
+      { 'entitlement.targetSystem': { $in: scope } },
+      { sourceSystem: 'PEOPLESOFT' },
+    ];
+  } else {
+    scopedEventQuery['entitlement.targetSystem'] = { $in: scope };
+  }
+
+  const scopedEvent = await InboundEvent.findOne(scopedEventQuery, null, { sort: { createdAt: -1 } });
 
   // Build access decision with strict service-scoped entitlement checks.
   const isActive = identity.lifecycleState === 'active';

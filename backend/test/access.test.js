@@ -73,9 +73,17 @@ function createAccessHandler({ identities, events }) {
     '../models/InboundEvent': {
       findOne: async (query) => {
         const email = query['identity.email'];
-        const scope = query['entitlement.targetSystem'] && query['entitlement.targetSystem'].$in;
         const byEmail = events
           .filter((event) => event.identity.email === email && event.status === query.status);
+        if (Array.isArray(query.$or)) {
+          return byEmail.find((event) => query.$or.some((branch) => {
+            const scoped = branch['entitlement.targetSystem'] && branch['entitlement.targetSystem'].$in;
+            if (Array.isArray(scoped) && scoped.includes(event.entitlement.targetSystem)) return true;
+            if (branch.sourceSystem) return event.sourceSystem === branch.sourceSystem;
+            return false;
+          })) || null;
+        }
+        const scope = query['entitlement.targetSystem'] && query['entitlement.targetSystem'].$in;
         if (!Array.isArray(scope)) return byEmail[0] || null;
         return byEmail.find((event) => scope.includes(event.entitlement.targetSystem)) || null;
       },
@@ -187,6 +195,33 @@ test('allows access only when requested system has matching entitlement (with sa
   assert.equal(peopleSoftRes.body.decision, 'ALLOW');
   assert.equal(peopleSoftRes.body.serviceId, 'PEOPLESOFT');
   assert.equal(peopleSoftRes.body.attributes.role, 'FMS_USER');
+});
+
+test('PEOPLESOFT access allows PeopleSoft-sourced AAS entitlement records', async () => {
+  const identities = {
+    'dao.alumni.manager@ust.hk': {
+      canonicalEmail: 'dao.alumni.manager@ust.hk',
+      lifecycleState: 'active',
+      sourceSystems: ['PEOPLESOFT'],
+    },
+  };
+  const events = [
+    {
+      status: 'success',
+      sourceSystem: 'PEOPLESOFT',
+      identity: { email: 'dao.alumni.manager@ust.hk' },
+      entitlement: { targetSystem: 'AAS', action: 'provision', role: 'HKUST ALUM ADMIN DOWNLOAD DATA' },
+    },
+  ];
+
+  const handler = createAccessHandler({ identities, events });
+  const res = createMockResponse();
+  await handler(createMockRequest('dao.alumni.manager@ust.hk', 'PEOPLESOFT'), res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.decision, 'ALLOW');
+  assert.equal(res.body.serviceId, 'PEOPLESOFT');
+  assert.equal(res.body.attributes.role, 'HKUST ALUM ADMIN DOWNLOAD DATA');
 });
 
 test('returns 400 for unknown service_id values', async () => {
