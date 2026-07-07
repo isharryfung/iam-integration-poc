@@ -157,7 +157,21 @@ test('normalizePayload JSPM: canonical payload extracts email correctly', () => 
 
 // ── validateMidpointInput (midpointPreview) ───────────────────────────────────
 
-const { validateMidpointInput } = require('../src/utils/midpointPreview');
+const { buildMidpointInput, validateMidpointInput } = require('../src/utils/midpointPreview');
+
+test('buildMidpointInput ECM: combined payload preserves attributes.groupEntitlements for preview validation', () => {
+  const input = buildMidpointInput({
+    eventId: 'ef277952-5034-4382-9a8b-4eb071474992',
+    sourceSystem: 'ECM',
+    correlationId: 'b65819d0-1ef0-4e8c-ac99-f8b6dd0fd5c2',
+    idempotencyKey: 'ui-1783390249887|ARIVY',
+    createdAt: '2026-07-07T02:10:49.936Z',
+    rawPayload: ecmCombinedPayload,
+  });
+
+  assert.ok(Array.isArray(input.attributes.groupEntitlements));
+  assert.equal(input.attributes.groupEntitlements.length, 0);
+});
 
 test('validateMidpointInput ECM: combined payload with groupEntitlements passes without documentClass', () => {
   const input = {
@@ -191,6 +205,29 @@ test('validateMidpointInput ECM: combined payload with groupEntitlements passes 
   const result = validateMidpointInput(input);
   assert.equal(result.isValid, true, `Expected valid but got errors: ${JSON.stringify(result.errors)}`);
   assert.equal(result.status, 'pass');
+  assert.ok(!result.errors.some(e => e.field === 'entitlement.documentClass'));
+});
+
+test('validateMidpointInput ECM: combined payload built from preview event passes without documentClass', () => {
+  const input = buildMidpointInput({
+    eventId: 'ef277952-5034-4382-9a8b-4eb071474992',
+    sourceSystem: 'ECM',
+    correlationId: 'b65819d0-1ef0-4e8c-ac99-f8b6dd0fd5c2',
+    idempotencyKey: 'ui-1783390249887|ARIVY',
+    createdAt: '2026-07-07T02:10:49.936Z',
+    rawPayload: {
+      ...ecmCombinedPayload,
+      attributes: {
+        memberships: [{ groupName: 'AR_All_Docs' }, { groupName: 'AR_RS_MGT' }],
+        groupEntitlements: [
+          { groupName: 'AR_All_Docs', resourceType: 'DOCUMENT_TYPE', resourceName: 'AR: Academic Transcript' },
+        ],
+      },
+    },
+  });
+
+  const result = validateMidpointInput(input);
+  assert.equal(result.isValid, true, `Expected valid but got errors: ${JSON.stringify(result.errors)}`);
   assert.ok(!result.errors.some(e => e.field === 'entitlement.documentClass'));
 });
 

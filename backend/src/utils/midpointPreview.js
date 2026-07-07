@@ -135,6 +135,12 @@ function buildMidpointInput(event) {
     event.idempotencyKey
   );
   const sourceAction = resolveSourceAction(event, normalized);
+  const previewAttributes =
+    (sourceSystem === 'CADS' && normalized.sourceData.cadsAttributes)
+      ? normalized.sourceData.cadsAttributes
+      : (sourceSystem === 'ECM' && event.rawPayload && event.rawPayload.attributes)
+        ? event.rawPayload.attributes
+        : undefined;
 
   return compactObject({
     meta: {
@@ -162,10 +168,7 @@ function buildMidpointInput(event) {
       documentClass: normalized.sourceData.ecmDocumentClass || null,
       projectCode: normalized.sourceData.jspmProjectCode || null,
     },
-    // Include CADS-specific permissions/limits when present
-    attributes: (sourceSystem === 'CADS' && normalized.sourceData.cadsAttributes)
-      ? normalized.sourceData.cadsAttributes
-      : undefined,
+    attributes: previewAttributes,
   });
 }
 
