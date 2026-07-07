@@ -121,9 +121,9 @@ export default function AccessCheck() {
         <p style={{ fontWeight: 600, marginBottom: 8 }}>ℹ️ How this works</p>
         <ul style={{ fontSize: 13, color: '#475569', paddingLeft: 20, lineHeight: 1.8 }}>
           <li>This endpoint checks if the user exists in the IAM system (has been ingested).</li>
-          <li>If the user&apos;s lifecycle state is <strong>active</strong>, access is <strong>ALLOWED</strong>.</li>
-          <li>If the user is not found or is inactive/suspended, access is <strong>DENIED</strong>.</li>
-          <li>In production, this would also check service-specific entitlements and validity windows.</li>
+          <li>Access is <strong>ALLOWED</strong> only when the account is active and has a matching entitlement for the requested service.</li>
+          <li>If the user is not found, inactive/suspended, or missing service-specific entitlement, access is <strong>DENIED</strong>.</li>
+          <li>System keys are normalized (for example, case/format differences) before matching entitlements.</li>
         </ul>
       </div>
     </div>

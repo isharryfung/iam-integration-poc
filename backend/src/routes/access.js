@@ -6,6 +6,68 @@ const { toSafeString } = require('../utils/sanitize');
 const { writeAudit } = require('../utils/audit');
 const { queryLimiter } = require('../middleware/rateLimiter');
 
+const SERVICE_KEY_ALIASES = {
+  ECM: 'ECM',
+  CADS: 'CADS',
+  JSPM: 'JSPM',
+  PEOPLESOFT: 'PEOPLESOFT',
+  PORTAL: 'PORTAL',
+  VPN: 'VPN',
+};
+
+const ENTITLEMENT_SCOPE_BY_SERVICE = {
+  ECM: ['ECM'],
+  CADS: ['CADS'],
+  JSPM: ['JSPM'],
+  // PEOPLESOFT checks support both module-level targets and generic PeopleSoft
+  // application payloads (matched via sourceSystem fallback in buildScopedEventQuery).
+  PEOPLESOFT: ['PEOPLESOFT', 'SIS', 'FMS', 'HRMS'],
+  PORTAL: ['PORTAL'],
+  VPN: ['VPN'],
+};
+
+const ALLOW_ACTIONS = new Set(['provision', 'update', 'sync']);
+
+function normalizeSystemKey(value) {
+  const safe = toSafeString(value);
+  if (!safe) return null;
+  const upper = safe.toUpperCase();
+  const compact = upper.replace(/[\s_.-]+/g, '');
+  return SERVICE_KEY_ALIASES[compact] || null;
+}
+
+function getEntitlementScope(serviceId) {
+  return ENTITLEMENT_SCOPE_BY_SERVICE[serviceId] || [serviceId];
+}
+
+function buildScopedEventQuery(email, serviceId, scope) {
+  const query = {
+    'identity.email': String(email),
+    status: 'success',
+  };
+  if (serviceId === 'PEOPLESOFT') {
+    query.$or = [
+      { 'entitlement.targetSystem': { $in: scope } },
+      { sourceSystem: 'PEOPLESOFT' },
+    ];
+  } else {
+    query['entitlement.targetSystem'] = { $in: scope };
+  }
+  return query;
+}
+
+function isWithinValidityRange(entitlement, now = new Date()) {
+  if (!entitlement) return false;
+  const { validFrom, validUntil } = entitlement;
+  const start = validFrom ? new Date(validFrom) : null;
+  const end = validUntil ? new Date(validUntil) : null;
+  if (start && Number.isNaN(start.getTime())) return false;
+  if (end && Number.isNaN(end.getTime())) return false;
+  if (start && start > now) return false;
+  if (end && end < now) return false;
+  return true;
+}
+
 /**
  * GET /user/access
  * GET /user/access?email={email}
@@ -16,12 +78,12 @@ const { queryLimiter } = require('../middleware/rateLimiter');
 router.get('/access', queryLimiter, async (req, res) => {
   const start = Date.now();
   const correlationId = req.correlationId;
-  // Sanitize serviceId to a plain string
+  // Normalize serviceId to canonical key
   const rawServiceId = req.headers['service_id'] || req.headers['x-service-id'] || req.query.serviceId;
-  const serviceId = toSafeString(rawServiceId);
+  const serviceId = normalizeSystemKey(rawServiceId);
 
   if (!serviceId) {
-    return res.status(400).json({ error: 'Missing service_id header or query parameter' });
+    return res.status(400).json({ error: 'Missing or invalid service_id header or query parameter' });
   }
 
   // Resolve email: query param > header — sanitize to plain string
@@ -40,20 +102,21 @@ router.get('/access', queryLimiter, async (req, res) => {
     return res.status(404).json({ error: 'User not found in IAM system', email });
   }
 
-  // Get the most recent successful event for this user (provides role/department attributes)
-  const lastEvent = await InboundEvent.findOne(
-    { 'identity.email': String(email), status: 'success' },
-    null,
-    { sort: { createdAt: -1 } }
-  );
+  // Get the most recent successful event for this user that matches the requested service scope.
+  const scope = getEntitlementScope(serviceId);
+  const scopedEventQuery = buildScopedEventQuery(email, serviceId, scope);
+  const scopedEvent = await InboundEvent.findOne(scopedEventQuery, null, { sort: { createdAt: -1 } });
 
-  // Build access decision (POC: allow all active users in the system)
+  // Build access decision with strict service-scoped entitlement checks.
   const isActive = identity.lifecycleState === 'active';
-  const decision = isActive ? 'ALLOW' : 'DENY';
-  const attributes = lastEvent
+  const entitlementAction = scopedEvent && scopedEvent.entitlement ? scopedEvent.entitlement.action : null;
+  const hasScopedEntitlement = Boolean(scopedEvent && ALLOW_ACTIONS.has(entitlementAction));
+  const entitlementIsValidNow = hasScopedEntitlement && isWithinValidityRange(scopedEvent.entitlement);
+  const decision = isActive && entitlementIsValidNow ? 'ALLOW' : 'DENY';
+  const attributes = scopedEvent
     ? {
-        role: lastEvent.entitlement.role || 'VIEWER',
-        department: lastEvent.entitlement.department,
+        role: scopedEvent.entitlement.role || 'VIEWER',
+        department: scopedEvent.entitlement.department,
         dataSecurityLevel: 'L1', // POC default
       }
     : {};
@@ -74,9 +137,9 @@ router.get('/access', queryLimiter, async (req, res) => {
     decision,
     status: identity.lifecycleState.toUpperCase(),
     validity: {
-      start: lastEvent && lastEvent.entitlement.validFrom ? lastEvent.entitlement.validFrom : null,
-      end:   lastEvent && lastEvent.entitlement.validUntil ? lastEvent.entitlement.validUntil : null,
-      isNowValid: isActive,
+      start: scopedEvent && scopedEvent.entitlement.validFrom ? scopedEvent.entitlement.validFrom : null,
+      end:   scopedEvent && scopedEvent.entitlement.validUntil ? scopedEvent.entitlement.validUntil : null,
+      isNowValid: entitlementIsValidNow,
     },
     attributes,
     sourceOfTruth: 'IAM_POC',
