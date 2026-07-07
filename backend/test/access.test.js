@@ -238,3 +238,18 @@ test('returns 400 for unknown service_id values', async () => {
   assert.equal(res.statusCode, 400);
   assert.match(res.body.error, /invalid service_id/i);
 });
+
+test('returns 400 when using PeopleSoft module key directly as service_id', async () => {
+  const identities = {
+    'ps.module@ust.hk': { canonicalEmail: 'ps.module@ust.hk', lifecycleState: 'active', sourceSystems: ['PEOPLESOFT'] },
+  };
+  const events = [
+    { status: 'success', sourceSystem: 'PEOPLESOFT', identity: { email: 'ps.module@ust.hk' }, entitlement: { targetSystem: 'FMS', action: 'provision', role: 'FMS_USER' } },
+  ];
+
+  const handler = createAccessHandler({ identities, events });
+  const res = createMockResponse();
+  await handler(createMockRequest('ps.module@ust.hk', 'FMS'), res);
+  assert.equal(res.statusCode, 400);
+  assert.match(res.body.error, /invalid service_id/i);
+});

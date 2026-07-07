@@ -19,6 +19,8 @@ const ENTITLEMENT_SCOPE_BY_SERVICE = {
   ECM: ['ECM'],
   CADS: ['CADS'],
   JSPM: ['JSPM'],
+  // PEOPLESOFT checks support both module-level targets and generic PeopleSoft
+  // application payloads (matched via sourceSystem fallback in buildScopedEventQuery).
   PEOPLESOFT: ['PEOPLESOFT', 'SIS', 'FMS', 'HRMS'],
   PORTAL: ['PORTAL'],
   VPN: ['VPN'],
@@ -36,6 +38,22 @@ function normalizeSystemKey(value) {
 
 function getEntitlementScope(serviceId) {
   return ENTITLEMENT_SCOPE_BY_SERVICE[serviceId] || [serviceId];
+}
+
+function buildScopedEventQuery(email, serviceId, scope) {
+  const query = {
+    'identity.email': String(email),
+    status: 'success',
+  };
+  if (serviceId === 'PEOPLESOFT') {
+    query.$or = [
+      { 'entitlement.targetSystem': { $in: scope } },
+      { sourceSystem: 'PEOPLESOFT' },
+    ];
+  } else {
+    query['entitlement.targetSystem'] = { $in: scope };
+  }
+  return query;
 }
 
 function isWithinValidityRange(entitlement, now = new Date()) {
@@ -86,19 +104,7 @@ router.get('/access', queryLimiter, async (req, res) => {
 
   // Get the most recent successful event for this user that matches the requested service scope.
   const scope = getEntitlementScope(serviceId);
-  const scopedEventQuery = {
-    'identity.email': String(email),
-    status: 'success',
-  };
-  if (serviceId === 'PEOPLESOFT') {
-    scopedEventQuery.$or = [
-      { 'entitlement.targetSystem': { $in: scope } },
-      { sourceSystem: 'PEOPLESOFT' },
-    ];
-  } else {
-    scopedEventQuery['entitlement.targetSystem'] = { $in: scope };
-  }
-
+  const scopedEventQuery = buildScopedEventQuery(email, serviceId, scope);
   const scopedEvent = await InboundEvent.findOne(scopedEventQuery, null, { sort: { createdAt: -1 } });
 
   // Build access decision with strict service-scoped entitlement checks.
