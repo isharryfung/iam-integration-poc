@@ -227,11 +227,11 @@ function validateMidpointInput(midpointInput) {
     if (!valid) addIssue('invalid', 'identity.email', reason);
   }
 
-  const hasGroupEntitlements =
+  const hasNonEmptyGroupEntitlements =
     midpointInput.attributes &&
     Array.isArray(midpointInput.attributes.groupEntitlements) &&
     midpointInput.attributes.groupEntitlements.length > 0;
-  if (sourceSystem === 'ECM' && !hasGroupEntitlements && (!midpointInput.entitlement || !midpointInput.entitlement.documentClass)) {
+  if (sourceSystem === 'ECM' && !hasNonEmptyGroupEntitlements && (!midpointInput.entitlement || !midpointInput.entitlement.documentClass)) {
     addIssue('missing', 'entitlement.documentClass', 'Document class is required for ECM events');
   }
 
